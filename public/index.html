@@ -1,0 +1,493 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Meeting Preparation Automation — AI-Powered Meeting Briefs</title>
+    <meta name="description"
+        content="Automatically receive AI-generated meeting preparation briefs every morning. Powered by Google Calendar, Gmail, Drive, and OpenAI.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap"
+        rel="stylesheet">
+    <link rel="stylesheet" href="/css/styles.css">
+    <link rel="icon" type="image/png" href="https://madeeas.com/wp-content/uploads/2025/08/logoss-150x150.png">
+</head>
+
+<body>
+    <!-- ============== LANDING PAGE ============== -->
+    <div id="landing-page" class="page active">
+        <!-- Navigation -->
+        <nav class="nav-landing">
+            <div class="nav-container">
+                <a href="/home" class="nav-logo">
+                    <img src="https://madeeas.com/wp-content/uploads/2025/09/foooter-logo-1024x143.png" alt="MadeEA" class="logo-img">
+                </a>
+                <div class="nav-actions">
+                    <button class="btn-theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+                        <span class="theme-icon-light">☀️</span>
+                        <span class="theme-icon-dark">🌙</span>
+                    </button>
+                    <a href="#" class="btn btn-outline" onclick="showSignIn(event)">Sign In</a>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Hero Section -->
+        <section class="hero">
+            <div class="hero-bg-orbs">
+                <div class="orb orb-1"></div>
+                <div class="orb orb-2"></div>
+                <div class="orb orb-3"></div>
+            </div>
+            <div class="hero-container">
+                <div class="hero-badge">
+                    <span class="badge-dot"></span>
+                    AI-Powered Automation
+                </div>
+                <h1 class="hero-title">
+                    Walk Into Every Meeting
+                    <span class="gradient-text">Fully Prepared</span>
+                </h1>
+                <p class="hero-subtitle">
+                    Automatically receive AI-generated meeting preparation briefs every morning.
+                    We pull from your Calendar, Gmail, and Drive to create comprehensive briefs
+                    with objectives, key attendees, decision points, and background context.
+                </p>
+                <div class="hero-cta">
+                    <button class="btn btn-primary btn-lg" onclick="showSignIn(event)">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path
+                                d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z"
+                                fill="#4285F4" />
+                            <path
+                                d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                                fill="#34A853" />
+                            <path
+                                d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                                fill="#FBBC05" />
+                            <path
+                                d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                                fill="#EA4335" />
+                        </svg>
+                        Sign in with Google
+                    </button>
+                </div>
+                <p class="hero-note">Free to use • No credit card required • Works with any Google account</p>
+            </div>
+        </section>
+
+        <!-- Features Section -->
+        <section class="features">
+            <div class="section-container">
+                <h2 class="section-title">How It Works</h2>
+                <p class="section-subtitle">Three simple steps to never be unprepared for a meeting again</p>
+                <div class="features-grid">
+                    <div class="feature-card">
+                        <div class="feature-icon">🔗</div>
+                        <h3>Connect Your Google</h3>
+                        <p>Sign in with Google and grant access to Calendar, Gmail, and Drive. Your data stays secure
+                            and encrypted.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">🤖</div>
+                        <h3>AI Analyzes Context</h3>
+                        <p>Every morning, our AI scans your meetings, searches for related emails, documents, and past
+                            meeting history.</p>
+                    </div>
+                    <div class="feature-card">
+                        <div class="feature-icon">📧</div>
+                        <h3>Get Your Brief</h3>
+                        <p>Receive a comprehensive meeting prep brief via email — objectives, key attendees, decision
+                            points, and more.</p>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- What's Included Section -->
+        <section class="included">
+            <div class="section-container">
+                <h2 class="section-title">What's In Your Brief</h2>
+                <p class="section-subtitle">Every brief is packed with actionable intelligence</p>
+                <div class="included-grid">
+                    <div class="included-item">
+                        <span class="included-icon">🎯</span>
+                        <div>
+                            <h4>Meeting Snapshot</h4>
+                            <p>What the meeting is about, why it matters, and expected outcomes</p>
+                        </div>
+                    </div>
+                    <div class="included-item">
+                        <span class="included-icon">👥</span>
+                        <div>
+                            <h4>Key Attendees</h4>
+                            <p>Who's attending, their likely priorities, and suggested talking points</p>
+                        </div>
+                    </div>
+                    <div class="included-item">
+                        <span class="included-icon">📋</span>
+                        <div>
+                            <h4>Objectives & Decisions</h4>
+                            <p>Primary objectives, specific decisions needed, and key questions</p>
+                        </div>
+                    </div>
+                    <div class="included-item">
+                        <span class="included-icon">📚</span>
+                        <div>
+                            <h4>Background Context</h4>
+                            <p>History from previous meetings, related emails, and documents</p>
+                        </div>
+                    </div>
+                    <div class="included-item">
+                        <span class="included-icon">📎</span>
+                        <div>
+                            <h4>Required Documents</h4>
+                            <p>Links to relevant files from Google Drive to review before the meeting</p>
+                        </div>
+                    </div>
+                    <div class="included-item">
+                        <span class="included-icon">⚠️</span>
+                        <div>
+                            <h4>Potential Concerns</h4>
+                            <p>Issues that might come up, sensitivities, risks, and blockers</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer class="footer">
+            <div class="footer-container">
+                <div class="footer-brand">
+                    <a href="/home">
+                        <img src="https://madeeas.com/wp-content/uploads/2025/09/foooter-logo-1024x143.png" alt="MadeEA" class="logo-img">
+                    </a>
+                    <p class="footer-tagline">Meeting Preparation Automation</p>
+                </div>
+                <div class="footer-links">
+                    <div class="footer-col">
+                        <h4>Product</h4>
+                        <a href="#">Features</a>
+                        <a href="#">How It Works</a>
+                    </div>
+                    <div class="footer-col">
+                        <h4>Support</h4>
+                        <a href="mailto:hello@madeeas.com">hello@madeeas.com</a>
+                        <a href="mailto:hello@madeeas.com">Contact Us</a>
+                    </div>
+                    <div class="footer-col">
+                        <h4>Company</h4>
+                        <a href="https://madeeas.com" target="_blank">MadeEA</a>
+                        <a href="#">Privacy Policy</a>
+                    </div>
+                </div>
+                <div class="footer-bottom">
+                    <p>&copy; 2026 MadeEA. All rights reserved. Powered by AI.</p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- ============== DASHBOARD PAGE ============== -->
+    <div id="dashboard-page" class="page">
+        <!-- Dashboard Navigation -->
+        <nav class="nav-dashboard">
+            <div class="nav-container">
+                <a href="/home" class="nav-logo">
+                    <img src="https://madeeas.com/wp-content/uploads/2025/09/foooter-logo-1024x143.png" alt="MadeEA" class="logo-img">
+                </a>
+                <div class="nav-actions">
+                    <button class="btn-theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
+                        <span class="theme-icon-light">☀️</span>
+                        <span class="theme-icon-dark">🌙</span>
+                    </button>
+                    <div class="user-menu" id="user-menu">
+                        <button class="user-menu-btn" onclick="toggleUserMenu()">
+                            <img id="user-avatar" src="" alt="Profile" class="user-avatar">
+                            <span id="user-name-nav" class="user-name-nav">User</span>
+                            <svg width="12" height="12" viewBox="0 0 12 12" fill="none">
+                                <path d="M3 4.5L6 7.5L9 4.5" stroke="currentColor" stroke-width="1.5"
+                                    stroke-linecap="round" stroke-linejoin="round" />
+                            </svg>
+                        </button>
+                        <div class="user-dropdown" id="user-dropdown">
+                            <a href="#" onclick="showSection('profile', event)">
+                                <span>👤</span> Profile & Settings
+                            </a>
+                            <a href="#" onclick="showSection('history', event)">
+                                <span>📊</span> Briefing History
+                            </a>
+                            <hr>
+                            <a href="mailto:hello@madeeas.com">
+                                <span>💬</span> Support
+                            </a>
+                            <a href="#" onclick="handleLogout(event)" class="logout-link">
+                                <span>🚪</span> Sign Out
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </nav>
+
+        <!-- Dashboard Content -->
+        <main class="dashboard-main">
+            <!-- Welcome Section -->
+            <section id="section-welcome" class="dashboard-section active">
+                <div class="dashboard-container">
+                    <div class="welcome-header">
+                        <h1>Welcome back, <span id="welcome-name" class="gradient-text">User</span></h1>
+                        <p class="welcome-subtitle">Your meeting briefs are being generated automatically every morning.
+                        </p>
+                    </div>
+
+                    <!-- Status Cards -->
+                    <div class="status-grid">
+                        <div class="status-card status-card-active">
+                            <div class="status-card-icon">✅</div>
+                            <div class="status-card-content">
+                                <h3>Connection Status</h3>
+                                <p id="connection-status">Google Connected</p>
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-card-icon">⏰</div>
+                            <div class="status-card-content">
+                                <h3>Daily Brief Time</h3>
+                                <p id="brief-time-display">7:00 AM</p>
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-card-icon">📅</div>
+                            <div class="status-card-content">
+                                <h3>Calendar</h3>
+                                <p id="calendar-display">Primary</p>
+                            </div>
+                        </div>
+                        <div class="status-card">
+                            <div class="status-card-icon">📊</div>
+                            <div class="status-card-content">
+                                <h3>Briefs Sent</h3>
+                                <p id="briefs-count">0</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Generate Brief Now -->
+                    <div class="generate-brief-section">
+                        <div class="generate-brief-card">
+                            <div class="generate-brief-info">
+                                <h2>⚡ On-Demand Brief</h2>
+                                <p>Generate a meeting preparation brief for today's meetings right now. It will be sent
+                                    to your email.</p>
+                            </div>
+                            <button id="generate-brief-btn" class="btn btn-primary btn-generate"
+                                onclick="handleGenerateBrief()">
+                                <span class="btn-generate-icon">🚀</span>
+                                <span class="btn-generate-text">Generate Brief Now</span>
+                                <span class="btn-generate-loading" style="display:none;">
+                                    <span class="spinner-small"></span>
+                                    Generating...
+                                </span>
+                            </button>
+                        </div>
+                        <div id="generate-brief-result" class="generate-result" style="display:none;"></div>
+                    </div>
+
+                    <!-- Quick Actions -->
+                    <div class="quick-actions">
+                        <h2>Quick Actions</h2>
+                        <div class="actions-grid">
+                            <button class="action-card" onclick="showSection('profile', event)">
+                                <span class="action-icon">👤</span>
+                                <span class="action-label">Edit Profile</span>
+                            </button>
+                            <button class="action-card" onclick="showSection('history', event)">
+                                <span class="action-icon">📊</span>
+                                <span class="action-label">View History</span>
+                            </button>
+                            <a class="action-card" href="mailto:hello@madeeas.com">
+                                <span class="action-icon">💬</span>
+                                <span class="action-label">Get Support</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- Profile Section -->
+            <section id="section-profile" class="dashboard-section">
+                <div class="dashboard-container">
+                    <button class="back-btn" onclick="showSection('welcome', event)">← Back to Dashboard</button>
+                    <h1>Profile & Settings</h1>
+                    <p class="section-desc">Customize your meeting brief preferences</p>
+
+                    <form id="profile-form" class="settings-form" onsubmit="saveProfile(event)">
+                        <!-- Profile Info -->
+                        <div class="form-card">
+                            <h3 class="form-card-title">
+                                <span>👤</span> Personal Information
+                            </h3>
+                            <div class="form-group">
+                                <label for="profile-name">Display Name</label>
+                                <input type="text" id="profile-name" placeholder="Your name" class="form-input">
+                            </div>
+                            <div class="form-group">
+                                <label for="profile-email">Email Address</label>
+                                <input type="email" id="profile-email" placeholder="your@email.com" class="form-input"
+                                    disabled>
+                                <span class="form-hint">Managed by Google — cannot be changed</span>
+                            </div>
+                            <div class="form-group">
+                                <label>Profile Picture</label>
+                                <div class="avatar-preview">
+                                    <img id="profile-avatar-preview" src="" alt="Avatar" class="avatar-img">
+                                    <span class="form-hint">Managed by your Google account</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Brief Settings -->
+                        <div class="form-card">
+                            <h3 class="form-card-title">
+                                <span>⚙️</span> Brief Settings
+                            </h3>
+                            <div class="form-group">
+                                <label for="profile-calendar">Calendar ID</label>
+                                <input type="text" id="profile-calendar" placeholder="primary" class="form-input"
+                                    value="primary">
+                                <span class="form-hint">Use "primary" for your main calendar, or enter a specific
+                                    calendar ID</span>
+                            </div>
+                            <div class="form-row">
+                                <div class="form-group">
+                                    <label for="profile-time">Daily Brief Time</label>
+                                    <input type="time" id="profile-time" class="form-input" value="07:00">
+                                </div>
+                                <div class="form-group">
+                                    <label for="profile-timezone">Timezone</label>
+                                    <select id="profile-timezone" class="form-input">
+                                        <option value="Asia/Dubai">Asia/Dubai (GST, UTC+4)</option>
+                                        <option value="Asia/Singapore">Asia/Singapore (SGT, UTC+8)</option>
+                                        <option value="Asia/Manila">Asia/Manila (PHT, UTC+8)</option>
+                                        <option value="America/New_York">America/New_York (EST, UTC-5)</option>
+                                        <option value="America/Los_Angeles">America/Los_Angeles (PST, UTC-8)</option>
+                                        <option value="America/Chicago">America/Chicago (CST, UTC-6)</option>
+                                        <option value="Europe/London">Europe/London (GMT, UTC+0)</option>
+                                        <option value="Europe/Paris">Europe/Paris (CET, UTC+1)</option>
+                                        <option value="Australia/Sydney">Australia/Sydney (AEST, UTC+11)</option>
+                                        <option value="Pacific/Auckland">Pacific/Auckland (NZST, UTC+12)</option>
+                                    </select>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Preferences -->
+                        <div class="form-card">
+                            <h3 class="form-card-title">
+                                <span>🎨</span> Appearance
+                            </h3>
+                            <div class="form-group">
+                                <label>Theme Preference</label>
+                                <div class="theme-options">
+                                    <label class="theme-option">
+                                        <input type="radio" name="theme" value="light" onchange="setTheme('light')">
+                                        <span class="theme-option-label">☀️ Light</span>
+                                    </label>
+                                    <label class="theme-option">
+                                        <input type="radio" name="theme" value="dark" onchange="setTheme('dark')">
+                                        <span class="theme-option-label">🌙 Dark</span>
+                                    </label>
+                                    <label class="theme-option">
+                                        <input type="radio" name="theme" value="system" onchange="setTheme('system')">
+                                        <span class="theme-option-label">💻 System</span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Active Toggle -->
+                        <div class="form-card">
+                            <h3 class="form-card-title">
+                                <span>🔔</span> Notifications
+                            </h3>
+                            <div class="form-group">
+                                <div class="toggle-row">
+                                    <div>
+                                        <label>Daily Briefs Active</label>
+                                        <span class="form-hint">Toggle off to pause daily brief emails</span>
+                                    </div>
+                                    <label class="toggle">
+                                        <input type="checkbox" id="profile-active" checked>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-actions">
+                            <button type="submit" class="btn btn-primary">Save Changes</button>
+                            <button type="button" class="btn btn-outline"
+                                onclick="showSection('welcome', event)">Cancel</button>
+                        </div>
+                    </form>
+
+                    <!-- Danger Zone -->
+                    <div class="form-card danger-card">
+                        <h3 class="form-card-title">
+                            <span>⚠️</span> Danger Zone
+                        </h3>
+                        <p>Disconnect your Google account and delete your data. This action cannot be undone.</p>
+                        <button class="btn btn-danger" onclick="handleDisconnect()">Disconnect & Delete Account</button>
+                    </div>
+
+                    <!-- Support -->
+                    <div class="support-card">
+                        <h3>Need Help?</h3>
+                        <p>Contact our support team for any questions or issues.</p>
+                        <a href="mailto:hello@madeeas.com" class="btn btn-outline">
+                            📧 hello@madeeas.com
+                        </a>
+                    </div>
+                </div>
+            </section>
+
+            <!-- History Section -->
+            <section id="section-history" class="dashboard-section">
+                <div class="dashboard-container">
+                    <button class="back-btn" onclick="showSection('welcome', event)">← Back to Dashboard</button>
+                    <h1>Briefing History</h1>
+                    <p class="section-desc">View your past meeting brief deliveries</p>
+
+                    <div class="history-list" id="history-list">
+                        <div class="empty-state">
+                            <span class="empty-icon">📊</span>
+                            <h3>No briefs yet</h3>
+                            <p>Your briefing history will appear here once your first daily brief is generated.</p>
+                        </div>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Toast Notification -->
+    <div id="toast" class="toast">
+        <span id="toast-message"></span>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loading-overlay" class="loading-overlay">
+        <div class="loading-spinner">
+            <div class="spinner"></div>
+            <p>Processing...</p>
+        </div>
+    </div>
+
+    <script src="/js/app.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,21 @@
+// Logout — Clear session cookie
+const cookie = require('cookie');
+
+exports.handler = async (event) => {
+    const clearCookie = cookie.serialize('meetprep_session', '', {
+        httpOnly: true,
+        secure: process.env.URL?.startsWith('https') || false,
+        sameSite: 'lax',
+        maxAge: 0,
+        path: '/',
+    });
+
+    return {
+        statusCode: 200,
+        headers: {
+            'Content-Type': 'application/json',
+            'Set-Cookie': clearCookie,
+        },
+        body: JSON.stringify({ success: true }),
+    };
+};

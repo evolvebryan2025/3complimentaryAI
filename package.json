@@ -1,0 +1,20 @@
+{
+    "name": "meeting-prep-automation",
+    "version": "1.0.0",
+    "description": "Meeting Preparation Automation™ — AI-powered meeting briefs",
+    "scripts": {
+        "dev": "netlify dev",
+        "build": "echo 'Static site — no build needed'",
+        "deploy": "netlify deploy --prod"
+    },
+    "dependencies": {
+        "@supabase/supabase-js": "^2.39.0",
+        "googleapis": "^130.0.0",
+        "openai": "^4.28.0",
+        "jsonwebtoken": "^9.0.2",
+        "cookie": "^0.6.0"
+    },
+    "devDependencies": {
+        "netlify-cli": "^17.0.0"
+    }
+}

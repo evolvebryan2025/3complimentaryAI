@@ -1,0 +1,1112 @@
+{
+  "name": "Meeting Preparation Automation™",
+  "nodes": [
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "field": "hours",
+              "hoursInterval": 24
+            }
+          ]
+        }
+      },
+      "id": "d856922a-a18a-4a10-a2e7-9cd73b27bf23",
+      "name": "Daily 7AM Trigger",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -880,
+        208
+      ],
+      "disabled": true,
+      "notes": "Triggers every weekday at 7:00 AM to prepare meeting briefs"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "has-meetings",
+              "leftValue": "={{ $json.summary }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "isNotEmpty"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6f6c5925-ecce-4c46-a383-ab59f8642edb",
+      "name": "Filter Valid Meetings",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -448,
+        208
+      ],
+      "disabled": true,
+      "notes": "Filters out invalid or cancelled meetings"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Extract meeting details and prepare for email search\nconst meeting = $input.item.json;\n\n// Parse attendees\nconst attendees = meeting.attendees || [];\nconst attendeeEmails = attendees.map(a => a.email).filter(e => e);\nconst attendeeNames = attendees.map(a => a.displayName || a.email).filter(n => n);\n\n// Parse meeting time\nconst startTime = new Date(meeting.start?.dateTime || meeting.start?.date);\nconst endTime = new Date(meeting.end?.dateTime || meeting.end?.date);\n\n// Format times\nconst timeFormat = { hour: '2-digit', minute: '2-digit', hour12: true };\nconst startFormatted = startTime.toLocaleTimeString('en-US', timeFormat);\nconst endFormatted = endTime.toLocaleTimeString('en-US', timeFormat);\n\n// Calculate duration\nconst durationMs = endTime - startTime;\nconst durationMins = Math.round(durationMs / 60000);\n\n// Extract meeting title and description\nconst title = meeting.summary || 'Untitled Meeting';\nconst description = meeting.description || '';\nconst location = meeting.location || 'Not specified';\nconst meetLink = meeting.hangoutLink || meeting.conferenceData?.entryPoints?.[0]?.uri || '';\n\n// Create search queries for Gmail\nconst searchTerms = [];\n\n// Add meeting title keywords (remove common words)\nconst titleKeywords = title\n  .toLowerCase()\n  .replace(/meeting|call|sync|standup|review|discussion/gi, '')\n  .trim()\n  .split(/\\s+/)\n  .filter(word => word.length > 3)\n  .slice(0, 3);\n\nif (titleKeywords.length > 0) {\n  searchTerms.push(titleKeywords.join(' '));\n}\n\n// Add attendee emails for search\nif (attendeeEmails.length > 0) {\n  searchTerms.push(`from:(${attendeeEmails.slice(0, 3).join(' OR ')})`);\n}\n\nreturn {\n  json: {\n    meetingId: meeting.id,\n    title: title,\n    description: description,\n    location: location,\n    meetLink: meetLink,\n    startTime: startFormatted,\n    endTime: endFormatted,\n    startDateTime: startTime.toISOString(),\n    duration: `${durationMins} minutes`,\n    attendees: attendeeNames,\n    attendeeEmails: attendeeEmails,\n    organizerEmail: meeting.organizer?.email || '',\n    organizerName: meeting.organizer?.displayName || meeting.organizer?.email || '',\n    gmailSearchQuery: searchTerms.join(' '),\n    htmlLink: meeting.htmlLink || ''\n  }\n};"
+      },
+      "id": "c7a6aa34-addf-4ce2-a3b6-d4f3174fed1b",
+      "name": "Parse Meeting Details",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -224,
+        112
+      ],
+      "disabled": true,
+      "notes": "Extracts and formats meeting information for processing"
+    },
+    {
+      "parameters": {
+        "operation": "getMany"
+      },
+      "id": "4b8f6af3-65a2-4736-9e1c-3ed560169d0b",
+      "name": "Search Related Emails",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "63c58d56-68db-4e97-ac35-3dd227d11a36",
+      "disabled": true,
+      "notes": "Searches for emails related to meeting topics and attendees"
+    },
+    {
+      "parameters": {
+        "operation": "search"
+      },
+      "id": "19a8a6ae-b3b3-44b5-9ea8-8f2887e820a1",
+      "name": "Search Google Drive",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        0,
+        208
+      ],
+      "disabled": true,
+      "notes": "Searches for relevant documents in Google Drive based on meeting title"
+    },
+    {
+      "parameters": {
+        "mode": "combine",
+        "options": {}
+      },
+      "id": "2c830832-b01b-48cb-b041-51ec4e3c9781",
+      "name": "Merge Meeting Data",
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3,
+      "position": [
+        224,
+        112
+      ],
+      "disabled": true,
+      "notes": "Combines meeting details with emails and documents"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "meeting-info",
+              "name": "meetingInfo",
+              "value": "={{ $('Parse Meeting Details').item.json }}",
+              "type": "object"
+            },
+            {
+              "id": "emails-data",
+              "name": "relatedEmails",
+              "value": "={{ $('Search Related Emails').all().map(item => ({\n  subject: item.json.subject,\n  from: item.json.from,\n  snippet: item.json.snippet,\n  date: new Date(parseInt(item.json.internalDate)).toLocaleDateString()\n})) }}",
+              "type": "array"
+            },
+            {
+              "id": "docs-data",
+              "name": "relatedDocs",
+              "value": "={{ $('Search Google Drive').all().map(item => ({\n  name: item.json.name,\n  link: item.json.webViewLink,\n  type: item.json.mimeType,\n  modified: new Date(item.json.modifiedTime).toLocaleDateString()\n})) }}",
+              "type": "array"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "8eb1cd8f-b11c-4b8a-b21f-0e92e30fcedf",
+      "name": "Structure Data",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        448,
+        112
+      ],
+      "disabled": true,
+      "notes": "Organizes all data into a structured format"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Aggregate all meetings data\nconst currentItem = $input.item.json;\nconst meetingInfo = currentItem.meetingInfo;\nconst aiBrief = currentItem.message?.content || 'AI brief generation failed';\nconst emails = currentItem.relatedEmails || [];\nconst docs = currentItem.relatedDocs || [];\n\n// Format documents section\nconst docsHtml = docs.length > 0 \n  ? docs.map(doc => `\n    <li style=\"margin-bottom: 8px;\">\n      <a href=\"${doc.link}\" style=\"color: #3498db; text-decoration: none;\">\n        📄 ${doc.name}\n      </a>\n      <span style=\"color: #888; font-size: 12px;\"> (Modified: ${doc.modified})</span>\n    </li>\n  `).join('')\n  : '<li style=\"color: #999;\">No related documents found</li>';\n\n// Format emails section\nconst emailsHtml = emails.length > 0\n  ? emails.map(email => `\n    <li style=\"margin-bottom: 10px; padding-left: 10px; border-left: 3px solid #ecf0f1;\">\n      <strong style=\"color: #2c3e50;\">${email.subject}</strong><br>\n      <span style=\"color: #7f8c8d; font-size: 13px;\">From: ${email.from} | ${email.date}</span><br>\n      <span style=\"color: #555; font-size: 13px; line-height: 1.4;\">${email.snippet.substring(0, 120)}...</span>\n    </li>\n  `).join('')\n  : '<li style=\"color: #999;\">No related emails found</li>';\n\n// Format attendees\nconst attendeesHtml = meetingInfo.attendees.length > 0\n  ? meetingInfo.attendees.map(name => `<span style=\"display: inline-block; background: #ecf0f1; padding: 5px 10px; margin: 3px; border-radius: 12px; font-size: 13px;\">${name}</span>`).join('')\n  : '<span style=\"color: #999;\">No attendees listed</span>';\n\n// Create meeting card HTML\nconst meetingCardHtml = `\n<div style=\"background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); padding: 25px; border-radius: 10px; margin-bottom: 25px; color: white; box-shadow: 0 4px 15px rgba(0,0,0,0.1);\">\n  <h2 style=\"margin: 0 0 15px 0; font-size: 24px; font-weight: 600;\">\n    🗓️ ${meetingInfo.title}\n  </h2>\n  <div style=\"display: flex; gap: 20px; flex-wrap: wrap; font-size: 14px;\">\n    <div>\n      <strong>⏰ Time:</strong> ${meetingInfo.startTime} - ${meetingInfo.endTime}\n    </div>\n    <div>\n      <strong>⌚ Duration:</strong> ${meetingInfo.duration}\n    </div>\n    ${meetingInfo.location !== 'Not specified' ? `\n    <div>\n      <strong>📍 Location:</strong> ${meetingInfo.location}\n    </div>\n    ` : ''}\n  </div>\n  ${meetingInfo.meetLink ? `\n  <div style=\"margin-top: 15px;\">\n    <a href=\"${meetingInfo.meetLink}\" style=\"background: rgba(255,255,255,0.2); color: white; padding: 10px 20px; border-radius: 6px; text-decoration: none; display: inline-block; font-weight: 500;\">🎥 Join Meeting</a>\n  </div>\n  ` : ''}\n</div>\n\n<div style=\"margin-bottom: 20px;\">\n  <h3 style=\"color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 8px; margin-bottom: 15px;\">👥 Attendees</h3>\n  <div>${attendeesHtml}</div>\n</div>\n\n${meetingInfo.description ? `\n<div style=\"margin-bottom: 20px;\">\n  <h3 style=\"color: #2c3e50; border-bottom: 2px solid #3498db; padding-bottom: 8px; margin-bottom: 15px;\">📋 Meeting Description</h3>\n  <div style=\"background: #f8f9fa; padding: 15px; border-radius: 8px; border-left: 4px solid #3498db;\">\n    <p style=\"margin: 0; color: #555; line-height: 1.6; white-space: pre-wrap;\">${meetingInfo.description}</p>\n  </div>\n</div>\n` : ''}\n\n<div style=\"margin-bottom: 20px;\">\n  <h3 style=\"color: #2c3e50; border-bottom: 2px solid #16a085; padding-bottom: 8px; margin-bottom: 15px;\">🤖 AI-Generated Meeting Brief</h3>\n  <div style=\"background: #e8f8f5; padding: 20px; border-radius: 8px; border-left: 4px solid #16a085;\">\n    <div style=\"color: #2c3e50; line-height: 1.8; white-space: pre-wrap;\">${aiBrief}</div>\n  </div>\n</div>\n\n<div style=\"margin-bottom: 20px;\">\n  <h3 style=\"color: #2c3e50; border-bottom: 2px solid #e67e22; padding-bottom: 8px; margin-bottom: 15px;\">📄 Related Documents</h3>\n  <ul style=\"list-style: none; padding: 0;\">\n    ${docsHtml}\n  </ul>\n</div>\n\n<div style=\"margin-bottom: 20px;\">\n  <h3 style=\"color: #2c3e50; border-bottom: 2px solid #9b59b6; padding-bottom: 8px; margin-bottom: 15px;\">📧 Recent Related Emails</h3>\n  <ul style=\"list-style: none; padding: 0;\">\n    ${emailsHtml}\n  </ul>\n</div>\n`;\n\nreturn {\n  json: {\n    meetingId: meetingInfo.meetingId,\n    meetingTitle: meetingInfo.title,\n    meetingTime: `${meetingInfo.startTime} - ${meetingInfo.endTime}`,\n    meetingCardHtml: meetingCardHtml\n  }\n};"
+      },
+      "id": "76e0499d-da5c-49eb-9fc5-8274b72c1a75",
+      "name": "Format Meeting Card",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        960,
+        112
+      ],
+      "disabled": true,
+      "notes": "Creates individual HTML card for each meeting"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Aggregate all meeting cards\nconst allItems = $input.all();\nconst meetingCards = allItems.map(item => item.json.meetingCardHtml).join('<hr style=\"border: none; border-top: 2px solid #ecf0f1; margin: 40px 0;\">');\n\nconst totalMeetings = allItems.length;\nconst currentDate = new Date().toLocaleDateString('en-US', { \n  weekday: 'long', \n  year: 'numeric', \n  month: 'long', \n  day: 'numeric' \n});\n\nconst fullHtml = `\n<!DOCTYPE html>\n<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n  <title>Meeting Preparation Brief - ${currentDate}</title>\n</head>\n<body style=\"font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif; background-color: #f5f7fa; margin: 0; padding: 20px;\">\n  <div style=\"max-width: 900px; margin: 0 auto; background: white; border-radius: 12px; box-shadow: 0 2px 20px rgba(0,0,0,0.08); overflow: hidden;\">\n    \n    <!-- Header -->\n    <div style=\"background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 40px 30px; text-align: center;\">\n      <h1 style=\"margin: 0 0 10px 0; font-size: 32px; font-weight: 700;\">📅 Meeting Preparation Brief</h1>\n      <p style=\"margin: 0; font-size: 18px; opacity: 0.95;\">${currentDate}</p>\n      <p style=\"margin: 10px 0 0 0; font-size: 16px; opacity: 0.9;\">You have <strong>${totalMeetings}</strong> meeting${totalMeetings !== 1 ? 's' : ''} today</p>\n    </div>\n    \n    <!-- Content -->\n    <div style=\"padding: 30px;\">\n      ${meetingCards}\n    </div>\n    \n    <!-- Footer -->\n    <div style=\"background: #f8f9fa; padding: 25px 30px; border-top: 1px solid #e9ecef; text-align: center;\">\n      <p style=\"margin: 0 0 10px 0; color: #6c757d; font-size: 14px;\">\n        🤖 Generated by Meeting Preparation Automation™\n      </p>\n      <p style=\"margin: 0; color: #adb5bd; font-size: 12px;\">\n        Powered by n8n + OpenAI | Created at ${new Date().toLocaleTimeString()}\n      </p>\n    </div>\n    \n  </div>\n</body>\n</html>\n`;\n\nreturn [\n  {\n    json: {\n      html: fullHtml,\n      subject: `📅 Meeting Prep Brief: ${totalMeetings} meeting${totalMeetings !== 1 ? 's' : ''} today - ${currentDate}`,\n      totalMeetings: totalMeetings,\n      generatedAt: new Date().toISOString()\n    }\n  }\n];"
+      },
+      "id": "38c6091c-ab79-45d3-bd9a-802de400bb93",
+      "name": "Aggregate All Meetings",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1184,
+        112
+      ],
+      "disabled": true,
+      "notes": "Combines all meeting cards into final email"
+    },
+    {
+      "parameters": {},
+      "id": "3ada09ab-be39-49f7-82eb-fd008015bf85",
+      "name": "No Meetings Today",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        -224,
+        320
+      ],
+      "disabled": true,
+      "notes": "Handles case when there are no meetings scheduled"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        -640,
+        208
+      ],
+      "id": "8b9774c4-16e8-4a24-9b79-939a2af66042",
+      "name": "Get many events",
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "Mpdgk6hV1fjd4FvX",
+          "name": "Google Calendar account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "mode": "list",
+          "value": ""
+        },
+        "messages": {
+          "values": [
+            {}
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        640,
+        112
+      ],
+      "id": "9b5417de-aa1e-483a-b819-2db44b3a8ba4",
+      "name": "Generate AI Brief",
+      "credentials": {
+        "openAiApi": {
+          "id": "CrrU5RjoDbhVoiLi",
+          "name": "Prince"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        1392,
+        112
+      ],
+      "id": "f404a4d1-7516-4b96-8513-32bf95f276d6",
+      "name": "Send Meeting Brief",
+      "webhookId": "fc50a14c-7a2a-4c00-87b0-8ca5f4b74b12",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "s1ZMV4D5dRugM6rZ",
+          "name": "Gmail account"
+        }
+      },
+      "disabled": true
+    },
+    {
+      "parameters": {
+        "content": "## Meeting Preparation Automation™\n- Every meeting becomes high-impact.\n- Pulls info from calendar, briefs, emails, and internal notes to automatically create a pre-meeting snapshot:\n* Objectives\n* Key attendees\n* Decision points\n* Required documents\n* Background context\n\nWhy this is always needed:\n-Executives sit in 8–15 meetings a day. Prepared meetings = better decisions and less wasted time.\n",
+        "height": 336,
+        "width": 560
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1680,
+        944
+      ],
+      "id": "5fc12be3-8252-480f-a0c4-b6707f7879e6",
+      "name": "Sticky Note"
+    },
+    {
+      "parameters": {
+        "content": "Recommended complimentary Automation for MadeEA Clients\n\n1. Executive Priority Alignment Automation™\n- Daily clarity. Zero decision fatigue.\n- Automatically generates the executive’s Top 5 Priorities for the Day based on calendar, deadlines, team updates, and ongoing projects.\n- Helps the executive start each morning knowing exactly where to focus effort.\n\nWhy this is always needed:\n- Executives constantly struggle with competing priorities. This automation ensures they spend time on the highest-impact work every single day.\n\n2. Meeting Preparation Automation™\n- Every meeting becomes high-impact.\n- Pulls info from calendar, briefs, emails, and internal notes to automatically create a pre-meeting snapshot:\n* Objectives\n* Key attendees\n* Decision points\n* Required documents\n* Background context\n\nWhy this is always needed:\n-Executives sit in 8–15 meetings a day. Prepared meetings = better decisions and less wasted time.\n\n3. Executive Summary Inbox Automation™\n- Your inbox, distilled to what matters.\n- Turns the executive’s overflowing inbox into a daily summary digest:\n* High-priority messages\n* Action-required items\n* Follow-up reminders\n* Upcoming deadlines from emails\n\nWhy this is always needed:\n- Every executive is buried under emails. This removes noise, surfaces what's important, and prevents missed commitments.",
+        "height": 832,
+        "width": 560
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        864,
+        960
+      ],
+      "id": "c9b1a83a-d1d9-42dd-b38a-0cae1a2e9a45",
+      "name": "Sticky Note1"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "bryan.sumait@madeeas.com",
+          "mode": "list",
+          "cachedResultName": "bryan.sumait@madeeas.com"
+        },
+        "options": {
+          "orderBy": "startTime"
+        }
+      },
+      "id": "4cb2c16b-fc31-4d93-ba29-58bb46bd013c",
+      "name": "Get Today's Meetings",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        -1712,
+        1360
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "Ba9SdZrVmrkUAx61",
+          "name": "bryan madeea"
+        }
+      },
+      "notes": "Fetches all calendar events for today, ordered by start time"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "has-attendees",
+              "leftValue": "={{ $json.attendees }}",
+              "rightValue": "",
+              "operator": {
+                "type": "array",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "not-cancelled",
+              "leftValue": "={{ $json.status }}",
+              "rightValue": "cancelled",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "f94843ab-a402-4403-8b1a-3c592fe547b8",
+      "name": "Filter Real Meetings",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        -1472,
+        1360
+      ],
+      "notes": "Only process meetings with attendees (excludes blocked time, personal events)"
+    },
+    {
+      "parameters": {
+        "batchSize": 5,
+        "options": {}
+      },
+      "id": "3b6faa52-deb3-4b0d-86dd-7549bc5b34fb",
+      "name": "Loop Through Meetings",
+      "type": "n8n-nodes-base.splitInBatches",
+      "typeVersion": 3,
+      "position": [
+        -1232,
+        1360
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// Extract comprehensive meeting information for context gathering\nconst meeting = $input.first().json;\n\n// Parse attendees with detailed info\nconst attendees = meeting.attendees || [];\nconst attendeeList = attendees.map(a => ({\n  email: a.email,\n  name: a.displayName || a.email.split('@')[0],\n  responseStatus: a.responseStatus,\n  organizer: a.organizer || false,\n  self: a.self || false,\n  domain: a.email.split('@')[1] || ''\n}));\n\n// Identify external vs internal attendees\nconst selfDomain = attendeeList.find(a => a.self)?.domain || '';\nconst externalAttendees = attendeeList.filter(a => a.domain !== selfDomain && selfDomain);\nconst internalAttendees = attendeeList.filter(a => a.domain === selfDomain || !selfDomain);\n\n// Parse meeting time\nconst startTime = meeting.start?.dateTime || meeting.start?.date;\nconst endTime = meeting.end?.dateTime || meeting.end?.date;\n\n// Calculate meeting duration in minutes\nconst durationMinutes = startTime && endTime \n  ? Math.round((new Date(endTime) - new Date(startTime)) / 60000) \n  : 0;\n\n// Extract potential topics from subject and description\nconst subject = meeting.summary || 'Untitled Meeting';\nconst description = meeting.description || '';\n\n// Build intelligent search queries\nconst attendeeEmails = attendees\n  .filter(a => !a.self)\n  .map(a => a.email)\n  .slice(0, 5) // Limit for query length\n  .join(' OR ');\n\n// Clean and extract keywords from subject\nconst subjectKeywords = subject\n  .replace(/[^a-zA-Z0-9\\s]/g, ' ')\n  .split(/\\s+/)\n  .filter(w => w.length > 3)\n  .filter(w => !['meeting', 'call', 'sync', 'review', 'discussion', 'update'].includes(w.toLowerCase()))\n  .slice(0, 5)\n  .join(' ');\n\n// Extract keywords from description\nconst descriptionKeywords = description\n  .replace(/<[^>]*>/g, ' ') // Remove HTML\n  .replace(/[^a-zA-Z0-9\\s]/g, ' ')\n  .split(/\\s+/)\n  .filter(w => w.length > 4)\n  .slice(0, 10)\n  .join(' ');\n\n// Detect meeting type\nlet meetingType = 'general';\nconst subjectLower = subject.toLowerCase();\nif (subjectLower.includes('interview')) meetingType = 'interview';\nelse if (subjectLower.includes('standup') || subjectLower.includes('stand-up')) meetingType = 'standup';\nelse if (subjectLower.includes('1:1') || subjectLower.includes('one on one') || subjectLower.includes('1-1')) meetingType = 'one-on-one';\nelse if (subjectLower.includes('review')) meetingType = 'review';\nelse if (subjectLower.includes('planning') || subjectLower.includes('sprint')) meetingType = 'planning';\nelse if (subjectLower.includes('demo') || subjectLower.includes('presentation')) meetingType = 'presentation';\nelse if (subjectLower.includes('kickoff') || subjectLower.includes('kick-off')) meetingType = 'kickoff';\nelse if (externalAttendees.length > 0) meetingType = 'external';\n\nreturn [{\n  json: {\n    meetingId: meeting.id,\n    subject: subject,\n    description: description,\n    startTime: startTime,\n    endTime: endTime,\n    durationMinutes: durationMinutes,\n    location: meeting.location || 'Not specified',\n    hangoutLink: meeting.hangoutLink || meeting.conferenceData?.entryPoints?.[0]?.uri || '',\n    conferenceType: meeting.conferenceData?.conferenceSolution?.name || 'None',\n    attendees: attendeeList,\n    attendeeCount: attendeeList.length,\n    externalAttendees: externalAttendees,\n    internalAttendees: internalAttendees,\n    hasExternalAttendees: externalAttendees.length > 0,\n    attendeeEmails: attendeeEmails,\n    subjectKeywords: subjectKeywords,\n    descriptionKeywords: descriptionKeywords,\n    allKeywords: (subjectKeywords + ' ' + descriptionKeywords).trim(),\n    meetingType: meetingType,\n    htmlLink: meeting.htmlLink,\n    organizer: meeting.organizer?.email || '',\n    organizerName: meeting.organizer?.displayName || meeting.organizer?.email?.split('@')[0] || '',\n    isOrganizer: meeting.organizer?.self || false,\n    created: meeting.created,\n    updated: meeting.updated,\n    recurringEventId: meeting.recurringEventId || null,\n    isRecurring: !!meeting.recurringEventId\n  }\n}];"
+      },
+      "id": "51dadea3-641a-450c-9dc4-7edb5bb6b0df",
+      "name": "Extract Meeting Data",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -896,
+        1376
+      ],
+      "notes": "Extracts and enriches meeting data, identifies meeting type, separates internal/external attendees"
+    },
+    {
+      "parameters": {
+        "resource": "fileFolder",
+        "queryString": "={{ $json.allKeywords ? 'fullText contains \"' + $json.allKeywords.split(' ').slice(0, 3).join('\" or fullText contains \"') + '\"' : 'modifiedTime > \"' + $now.minus({days: 7}).toISO() + '\"' }}",
+        "limit": 8,
+        "filter": {},
+        "options": {
+          "fields": [
+            "id",
+            "name",
+            "mimeType",
+            "webViewLink",
+            "*"
+          ]
+        }
+      },
+      "id": "5c4c1dcf-fc14-4ef5-81f8-239d144e8f93",
+      "name": "Search Drive Documents",
+      "type": "n8n-nodes-base.googleDrive",
+      "typeVersion": 3,
+      "position": [
+        -608,
+        1408
+      ],
+      "credentials": {
+        "googleDriveOAuth2Api": {
+          "id": "cCDHwV8tnt6T4BVR",
+          "name": "bryan madeea"
+        }
+      },
+      "notes": "Finds relevant documents, presentations, and spreadsheets related to meeting topics"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "calendar": {
+          "__rl": true,
+          "value": "bryan.sumait@madeeas.com",
+          "mode": "list",
+          "cachedResultName": "bryan.sumait@madeeas.com"
+        },
+        "limit": 5,
+        "options": {
+          "orderBy": "startTime"
+        }
+      },
+      "id": "db62d738-2195-428c-b7db-30ebef28993b",
+      "name": "Search Previous Meetings",
+      "type": "n8n-nodes-base.googleCalendar",
+      "typeVersion": 1.3,
+      "position": [
+        -608,
+        1600
+      ],
+      "credentials": {
+        "googleCalendarOAuth2Api": {
+          "id": "Ba9SdZrVmrkUAx61",
+          "name": "bryan madeea"
+        }
+      },
+      "notes": "Finds previous meetings with similar topics for historical context"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Consolidate all gathered context for AI processing\nconst items = $input.all();\n\n// Get the original meeting data\nlet meetingData = null;\nfor (const item of items) {\n  if (item.json.meetingId && item.json.attendees) {\n    meetingData = item.json;\n    break;\n  }\n}\n\nif (!meetingData) {\n  // Fallback: try to find meeting data from the loop\n  const loopData = $('Loop Through Meetings').first()?.json;\n  if (loopData) {\n    meetingData = loopData;\n  }\n}\n\n// Extract email context with better parsing\nconst emails = items\n  .filter(item => item.json.labelIds || item.json.threadId)\n  .map(item => {\n    const headers = item.json.payload?.headers || [];\n    return {\n      subject: headers.find(h => h.name?.toLowerCase() === 'subject')?.value || 'No Subject',\n      from: headers.find(h => h.name?.toLowerCase() === 'from')?.value || '',\n      to: headers.find(h => h.name?.toLowerCase() === 'to')?.value || '',\n      date: item.json.internalDate ? new Date(parseInt(item.json.internalDate)).toISOString() : '',\n      snippet: item.json.snippet || '',\n      id: item.json.id\n    };\n  })\n  .filter(e => e.subject !== 'No Subject' || e.snippet)\n  .slice(0, 8); // Limit for context window\n\n// Extract document context\nconst documents = items\n  .filter(item => item.json.mimeType && item.json.webViewLink)\n  .map(item => ({\n    name: item.json.name,\n    type: item.json.mimeType,\n    typeLabel: getMimeTypeLabel(item.json.mimeType),\n    link: item.json.webViewLink,\n    lastModified: item.json.modifiedTime,\n    description: item.json.description || '',\n    owner: item.json.owners?.[0]?.displayName || ''\n  }))\n  .slice(0, 6);\n\n// Extract previous meetings context\nconst previousMeetings = items\n  .filter(item => item.json.htmlLink && item.json.summary && (!meetingData || item.json.id !== meetingData.meetingId))\n  .map(item => ({\n    subject: item.json.summary,\n    date: item.json.start?.dateTime || item.json.start?.date,\n    attendeeCount: item.json.attendees?.length || 0,\n    description: item.json.description || '',\n    link: item.json.htmlLink\n  }))\n  .slice(0, 5);\n\nfunction getMimeTypeLabel(mimeType) {\n  const types = {\n    'application/vnd.google-apps.document': 'Google Doc',\n    'application/vnd.google-apps.spreadsheet': 'Google Sheet',\n    'application/vnd.google-apps.presentation': 'Google Slides',\n    'application/pdf': 'PDF',\n    'application/vnd.openxmlformats-officedocument.wordprocessingml.document': 'Word Doc',\n    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': 'Excel',\n    'application/vnd.openxmlformats-officedocument.presentationml.presentation': 'PowerPoint'\n  };\n  return types[mimeType] || 'Document';\n}\n\nreturn [{\n  json: {\n    meeting: meetingData || {},\n    context: {\n      relatedEmails: emails,\n      relatedDocuments: documents,\n      previousMeetings: previousMeetings,\n      emailCount: emails.length,\n      documentCount: documents.length,\n      previousMeetingCount: previousMeetings.length,\n      totalContextItems: emails.length + documents.length + previousMeetings.length\n    }\n  }\n}];"
+      },
+      "id": "f11aaa6f-12b2-4234-8626-fffcf7cc4d76",
+      "name": "Prepare AI Context",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        1328
+      ],
+      "notes": "Consolidates all gathered context into a structured format for AI processing"
+    },
+    {
+      "parameters": {
+        "jsCode": "const items = $input.all();\nlet input = items[0]?.json || {};\n\n// Handle different output structures from OpenAI node\nlet briefing = '';\nif (input.message?.content) {\n  briefing = input.message.content;\n} else if (input.content) {\n  briefing = input.content;\n} else if (typeof input === 'string') {\n  briefing = input;\n} else if (input.text) {\n  briefing = input.text;\n} else if (input.output) {\n  briefing = input.output;\n}\n\n// Get meeting data from previous node\nconst prepareNode = $('Prepare AI Context').first();\nconst meeting = prepareNode?.json?.meeting || {};\nconst context = prepareNode?.json?.context || {};\n\n// Format time nicely\nconst formatTime = (isoString) => {\n  if (!isoString) return 'TBD';\n  try {\n    const date = new Date(isoString);\n    return date.toLocaleString('en-US', {\n      weekday: 'short',\n      month: 'short',\n      day: 'numeric',\n      hour: 'numeric',\n      minute: '2-digit',\n      hour12: true\n    });\n  } catch (e) {\n    return isoString;\n  }\n};\n\n// Create the formatted briefing document\nconst formattedBriefing = `\n╔══════════════════════════════════════════════════════════════════╗\n║  📋 MEETING PREPARATION BRIEF                                    ║\n╚══════════════════════════════════════════════════════════════════╝\n\n┌─────────────────────────────────────────────────────────────────┐\n│  ${meeting.subject || 'Meeting'}                                 \n│  📅 ${formatTime(meeting.startTime)} (${meeting.durationMinutes || '?'} min)\n│  📍 ${meeting.location || 'No location specified'}\n│  🔗 ${meeting.hangoutLink || 'No video link'}\n│  👥 ${meeting.attendeeCount || '?'} attendees${meeting.hasExternalAttendees ? ' (includes external)' : ''}\n└─────────────────────────────────────────────────────────────────┘\n\n${briefing}\n\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n📊 CONTEXT GATHERED\n• ${context.emailCount || 0} related emails analyzed\n• ${context.documentCount || 0} relevant documents found  \n• ${context.previousMeetingCount || 0} previous meetings reviewed\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n🔗 Quick Links:\n• Calendar Event: ${meeting.htmlLink || 'N/A'}\n• Join Meeting: ${meeting.hangoutLink || 'N/A'}\n\n─────────────────────────────────────────────────────────────────\nGenerated by Meeting Preparation Automation™\n${new Date().toLocaleString()}\n─────────────────────────────────────────────────────────────────\n`;\n\n// Create HTML version for email\nconst htmlBriefing = `\n<!DOCTYPE html>\n<html>\n<head>\n  <style>\n    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; line-height: 1.6; color: #333; max-width: 700px; margin: 0 auto; padding: 20px; }\n    .header { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 10px; margin-bottom: 20px; }\n    .header h1 { margin: 0 0 10px 0; font-size: 24px; }\n    .header .meta { opacity: 0.9; font-size: 14px; }\n    .section { background: #f8f9fa; border-left: 4px solid #667eea; padding: 15px; margin: 15px 0; border-radius: 0 8px 8px 0; }\n    .section h2 { margin: 0 0 10px 0; color: #667eea; font-size: 16px; }\n    .quick-links { background: #e8f4fd; padding: 15px; border-radius: 8px; margin: 20px 0; }\n    .quick-links a { color: #667eea; text-decoration: none; margin-right: 20px; }\n    .footer { text-align: center; color: #888; font-size: 12px; margin-top: 30px; padding-top: 20px; border-top: 1px solid #eee; }\n    ul { padding-left: 20px; }\n    li { margin: 5px 0; }\n  </style>\n</head>\n<body>\n  <div class=\"header\">\n    <h1>📋 ${meeting.subject || 'Meeting Brief'}</h1>\n    <div class=\"meta\">\n      📅 ${formatTime(meeting.startTime)} • ⏱️ ${meeting.durationMinutes || '?'} minutes • 👥 ${meeting.attendeeCount || '?'} attendees\n    </div>\n  </div>\n  \n  <div class=\"quick-links\">\n    <strong>Quick Links:</strong>\n    ${meeting.htmlLink ? `<a href=\"${meeting.htmlLink}\">📅 Calendar Event</a>` : ''}\n    ${meeting.hangoutLink ? `<a href=\"${meeting.hangoutLink}\">🎥 Join Meeting</a>` : ''}\n  </div>\n  \n  <div class=\"content\">\n    ${briefing.replace(/\\n/g, '<br>').replace(/#{2,}\\s*([^\\n]+)/g, '<h3>$1</h3>').replace(/•/g, '<li>').replace(/\\*\\*([^*]+)\\*\\*/g, '<strong>$1</strong>')}\n  </div>\n  \n  <div class=\"section\">\n    <h2>📊 Context Gathered</h2>\n    <ul>\n      <li>${context.emailCount || 0} related emails analyzed</li>\n      <li>${context.documentCount || 0} relevant documents found</li>\n      <li>${context.previousMeetingCount || 0} previous meetings reviewed</li>\n    </ul>\n  </div>\n  \n  <div class=\"footer\">\n    Generated by Meeting Preparation Automation™<br>\n    ${new Date().toLocaleString()}\n  </div>\n</body>\n</html>\n`;\n\nreturn [{\n  json: {\n    meetingId: meeting.meetingId,\n    meetingSubject: meeting.subject,\n    meetingTime: meeting.startTime,\n    meetingTimeFormatted: formatTime(meeting.startTime),\n    durationMinutes: meeting.durationMinutes,\n    attendees: meeting.attendees,\n    attendeeCount: meeting.attendeeCount,\n    organizer: meeting.organizer,\n    isOrganizer: meeting.isOrganizer,\n    meetingType: meeting.meetingType,\n    briefing: formattedBriefing,\n    briefingHtml: htmlBriefing,\n    briefingPlainText: briefing,\n    meetingLink: meeting.htmlLink,\n    conferenceLink: meeting.hangoutLink,\n    contextSummary: {\n      emails: context.emailCount || 0,\n      documents: context.documentCount || 0,\n      previousMeetings: context.previousMeetingCount || 0\n    }\n  }\n}];"
+      },
+      "id": "1fe52bd0-96cb-42ce-aaaa-408e174c2ace",
+      "name": "Format Briefing Output",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        352,
+        1328
+      ],
+      "notes": "Formats the AI-generated brief into both plain text and HTML versions"
+    },
+    {
+      "parameters": {
+        "pageId": {
+          "__rl": true,
+          "mode": "url",
+          "value": ""
+        },
+        "title": "={{ '📋 ' + $json.meetingSubject }}",
+        "blockUi": {
+          "blockValues": [
+            {
+              "textContent": "={{ $json.briefingPlainText }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "id": "7e677c70-69a7-47e3-8253-976c49c1eca2",
+      "name": "Save to Notion (Optional)",
+      "type": "n8n-nodes-base.notion",
+      "typeVersion": 2.2,
+      "position": [
+        592,
+        1232
+      ],
+      "disabled": true,
+      "notes": "OPTIONAL: Enable this node and configure your Notion database to save briefs."
+    },
+    {
+      "parameters": {
+        "sendTo": "=bryan.sumait@madeeas.com",
+        "subject": "={{ '📋 Meeting Brief: ' + $json.meetingSubject + ' (' + $json.meetingTimeFormatted + ')' }}",
+        "message": "={{ $json.briefingHtml }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "id": "b869998e-e430-475b-ac2f-07f3990fa431",
+      "name": "Email Briefing",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        592,
+        1424
+      ],
+      "webhookId": "8835cf87-24bb-4bef-9841-ac1999da499a",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "s1ZMV4D5dRugM6rZ",
+          "name": "Gmail account"
+        }
+      },
+      "notes": "Sends the formatted brief to your email before the meeting"
+    },
+    {
+      "parameters": {
+        "operation": "getAll",
+        "limit": 10,
+        "filters": {
+          "q": "={{ $json.allKeywords ? '(' + $json.allKeywords + ')' : '' }}{{ $json.attendeeEmails ? ' OR from:(' + $json.attendeeEmails + ')' : '' }}",
+          "receivedAfter": "={{ $now.minus({days: 14}).toISO() }}"
+        }
+      },
+      "id": "294b4a26-bb34-454e-80b8-b6718951ed61",
+      "name": "Search Related Emails1",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.1,
+      "position": [
+        -608,
+        1232
+      ],
+      "webhookId": "df2a8815-6d4b-4635-bdbb-5f3456be5ac8",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "plWJdoy5NXVBWQTj",
+          "name": "bryan madeea"
+        }
+      },
+      "notes": "Searches for emails related to meeting topic or from attendees in the last 14 days"
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {}
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        -1904,
+        1360
+      ],
+      "id": "b73a71b2-c414-4dba-808b-0e14acfbae47",
+      "name": "Schedule Trigger"
+    },
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-3.5-turbo",
+          "mode": "list",
+          "cachedResultName": "GPT-3.5-TURBO"
+        },
+        "messages": {
+          "values": [
+            {
+              "content": "=You are an elite executive assistant AI that creates concise, high-impact meeting preparation briefs. Your briefs help busy executives walk into every meeting fully prepared, confident, and ready to make decisions.\\n\\nYOUR BRIEF MUST INCLUDE:\\n\\n## 🎯 Meeting Snapshot\\nOne paragraph summary: what this meeting is about, why it matters, and the expected outcome.\\n\\n## 👥 Key Attendees\\nFor each key attendee (focus on external or senior attendees):\\n- Name, role/context\\n- Their likely priorities/concerns for this meeting\\n- Suggested talking points or questions for them\\n\\n## 📋 Objectives & Decision Points\\n- Primary objective (what success looks like)\\n- Specific decisions that need to be made\\n- Questions that need to be answered\\n\\n## 📚 Background Context\\n- Relevant history from previous meetings\\n- Key points from related emails\\n- Important context from documents\\n\\n## 📎 Required Documents\\n- Links to relevant files to review\\n- Documents that should be referenced or shared\\n\\n## ⚠️ Potential Concerns\\n- Issues that might come up\\n- Sensitivities to be aware of\\n- Risks or blockers to address\\n\\n## ✅ Recommended Preparation\\n- Specific things to review before the meeting\\n- Data points to have ready\\n- Questions to prepare answers for\\n\\nGUIDELINES:\\n- Be concise but thorough - executives have limited time\\n- Focus on actionable insights, not just information\\n- Highlight decisions and outcomes, not just topics\\n- If context is limited, be clear about what's unknown and suggest how to prepare despite gaps\\n- Use bullet points for readability\\n- Include document links when available",
+              "role": "system"
+            },
+            {
+              "content": "=Create a meeting preparation brief for:\\n\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n📅 MEETING DETAILS\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\nSubject: {{ $json.meeting.subject }}\\nType: {{ $json.meeting.meetingType }}\\nTime: {{ $json.meeting.startTime }} to {{ $json.meeting.endTime }}\\nDuration: {{ $json.meeting.durationMinutes }} minutes\\nLocation: {{ $json.meeting.location }}\\nConference: {{ $json.meeting.conferenceType }} - {{ $json.meeting.hangoutLink || 'No link' }}\\nRecurring: {{ $json.meeting.isRecurring ? 'Yes' : 'No' }}\\nYou are organizer: {{ $json.meeting.isOrganizer ? 'Yes' : 'No' }}\\n\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n👥 ATTENDEES ({{ $json.meeting.attendeeCount }} people)\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\nOrganizer: {{ $json.meeting.organizerName }} ({{ $json.meeting.organizer }})\\n\\nInternal Attendees:\\n{{ $json.meeting.internalAttendees?.map(a => `• ${a.name} <${a.email}> - ${a.responseStatus}`).join('\\\\n') || 'None identified' }}\\n\\nExternal Attendees:\\n{{ $json.meeting.externalAttendees?.map(a => `• ${a.name} <${a.email}> [${a.domain}] - ${a.responseStatus}`).join('\\\\n') || 'None' }}\\n\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n📝 MEETING DESCRIPTION\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n{{ $json.meeting.description || 'No description provided' }}\\n\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n📧 RELATED EMAILS ({{ $json.context.emailCount }} found)\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n{{ $json.context.relatedEmails?.map(e => `FROM: ${e.from}\\\\nSUBJECT: ${e.subject}\\\\nDATE: ${e.date}\\\\nPREVIEW: ${e.snippet}\\\\n---`).join('\\\\n') || 'No related emails found in the last 14 days' }}\\n\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n📎 RELATED DOCUMENTS ({{ $json.context.documentCount }} found)\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n{{ $json.context.relatedDocuments?.map(d => `• ${d.name} (${d.typeLabel})\\\\n  Link: ${d.link}\\\\n  Modified: ${d.lastModified}\\\\n  Owner: ${d.owner}`).join('\\\\n\\\\n') || 'No related documents found' }}\\n\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n🔄 PREVIOUS RELATED MEETINGS ({{ $json.context.previousMeetingCount }} found)\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n{{ $json.context.previousMeetings?.map(m => `• \\\"${m.subject}\\\" on ${m.date}\\\\n  Attendees: ${m.attendeeCount}\\\\n  ${m.description ? 'Notes: ' + m.description.substring(0, 200) : ''}`).join('\\\\n\\\\n') || 'No previous related meetings found in the last 60 days' }}\\n\\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\\n\\nGenerate a comprehensive but scannable meeting preparation brief."
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 1.8,
+      "position": [
+        16,
+        1328
+      ],
+      "id": "2df147b1-ef57-4b54-8879-0f88d821c37c",
+      "name": "Generate Meeting Briefing",
+      "credentials": {
+        "openAiApi": {
+          "id": "CrrU5RjoDbhVoiLi",
+          "name": "Prince"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "numberInputs": 3
+      },
+      "type": "n8n-nodes-base.merge",
+      "typeVersion": 3.2,
+      "position": [
+        -368,
+        1360
+      ],
+      "id": "0731e6f2-0425-43fa-8dc2-c079dce31a80",
+      "name": "Merge All Context"
+    },
+    {
+      "parameters": {
+        "content": "## Suggestions \n\n1. Is test it for multiple appointments.\n2. Detailed Agenda of the meeting\n3. Short and concise",
+        "height": 400,
+        "color": 3
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -368,
+        848
+      ],
+      "typeVersion": 1,
+      "id": "18d934fe-e091-4f0d-ae88-9b6fb5730e8c",
+      "name": "Sticky Note2"
+    },
+    {
+      "parameters": {
+        "content": "## Instead sending directly via email. \n\nSend it to the person incharge then put it in a doc format.",
+        "color": 6
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        592,
+        1600
+      ],
+      "typeVersion": 1,
+      "id": "adb86dd1-4b7c-43e6-8b2e-4dce24f6700f",
+      "name": "Sticky Note11"
+    },
+    {
+      "parameters": {
+        "content": "##put the EA Email here",
+        "color": 4
+      },
+      "type": "n8n-nodes-base.stickyNote",
+      "position": [
+        -672,
+        1072
+      ],
+      "typeVersion": 1,
+      "id": "2cb49a2a-c67e-4990-90f3-3f168a5e933b",
+      "name": "Sticky Note3"
+    }
+  ],
+  "pinData": {
+    "Get Today's Meetings": [
+      {
+        "json": {
+          "id": "1cdj6hg8qfln6q79jvggdh26op_20251201T100000Z",
+          "summary": "Mtg w/ Team - Round-up Discussion",
+          "start": {
+            "dateTime": "2025-12-01T18:00:00+08:00",
+            "timeZone": "Asia/Dubai"
+          },
+          "end": {
+            "dateTime": "2025-12-01T19:00:00+08:00",
+            "timeZone": "Asia/Dubai"
+          },
+          "attendees": [
+            {
+              "email": "bella.nino@madeeas.com",
+              "responseStatus": "needsAction"
+            },
+            {
+              "email": "reich.rellora@madeeas.com",
+              "responseStatus": "needsAction"
+            },
+            {
+              "email": "princeacquahandam@gmail.com",
+              "organizer": true,
+              "responseStatus": "accepted"
+            },
+            {
+              "email": "fayme.magallanes@madeeas.com",
+              "responseStatus": "needsAction"
+            },
+            {
+              "email": "bryan.sumait@madeeas.com",
+              "self": true,
+              "responseStatus": "needsAction"
+            },
+            {
+              "email": "rowena.petran@madeeas.com",
+              "responseStatus": "needsAction"
+            },
+            {
+              "email": "angelica.roma@madeeas.com",
+              "responseStatus": "needsAction"
+            },
+            {
+              "email": "rowenarosepetran@gmail.com",
+              "responseStatus": "needsAction"
+            },
+            {
+              "email": "joel.ysmael@madeeas.com",
+              "responseStatus": "needsAction"
+            }
+          ],
+          "creator": {
+            "email": "princeacquahandam@gmail.com"
+          },
+          "organizer": {
+            "email": "princeacquahandam@gmail.com"
+          },
+          "created": "2025-11-03T12:29:44.000Z",
+          "updated": "2025-11-03T12:30:10.720Z",
+          "conferenceData": {
+            "entryPoints": [
+              {
+                "entryPointType": "video",
+                "uri": "https://meet.google.com/rpf-dgpv-kma",
+                "label": "meet.google.com/rpf-dgpv-kma"
+              }
+            ],
+            "conferenceSolution": {
+              "key": {
+                "type": "hangoutsMeet"
+              },
+              "name": "Google Meet",
+              "iconUri": "https://fonts.gstatic.com/s/i/productlogos/meet_2020q4/v6/web-512dp/logo_meet_2020q4_color_2x_web_512dp.png"
+            },
+            "conferenceId": "rpf-dgpv-kma"
+          },
+          "etag": "\"3524346021441022\"",
+          "eventType": "default",
+          "hangoutLink": "https://meet.google.com/rpf-dgpv-kma",
+          "htmlLink": "https://www.google.com/calendar/event?eid=MWNkajZoZzhxZmxuNnE3OWp2Z2dkaDI2b3BfMjAyNTEyMDFUMTAwMDAwWiBicnlhbi5zdW1haXRAbWFkZWVhcy5jb20",
+          "iCalUID": "1cdj6hg8qfln6q79jvggdh26op@google.com",
+          "kind": "calendar#event",
+          "originalStartTime": {
+            "dateTime": "2025-12-01T18:00:00+08:00",
+            "timeZone": "Asia/Dubai"
+          },
+          "recurringEventId": "1cdj6hg8qfln6q79jvggdh26op",
+          "reminders": {
+            "useDefault": true
+          },
+          "sequence": 1,
+          "status": "confirmed"
+        }
+      }
+    ]
+  },
+  "connections": {
+    "Filter Valid Meetings": {
+      "main": [
+        [
+          {
+            "node": "Parse Meeting Details",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Meetings Today",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Meeting Details": {
+      "main": [
+        [
+          {
+            "node": "Search Related Emails",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Search Google Drive",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Related Emails": {
+      "main": [
+        [
+          {
+            "node": "Merge Meeting Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Google Drive": {
+      "main": [
+        [
+          {
+            "node": "Merge Meeting Data",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Merge Meeting Data": {
+      "main": [
+        [
+          {
+            "node": "Structure Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Format Meeting Card": {
+      "main": [
+        [
+          {
+            "node": "Aggregate All Meetings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Aggregate All Meetings": {
+      "main": [
+        [
+          {
+            "node": "Send Meeting Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get many events": {
+      "main": [
+        [
+          {
+            "node": "Filter Valid Meetings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Daily 7AM Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get many events",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Structure Data": {
+      "main": [
+        [
+          {
+            "node": "Generate AI Brief",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate AI Brief": {
+      "main": [
+        [
+          {
+            "node": "Format Meeting Card",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Meeting Brief": {
+      "main": [
+        []
+      ]
+    },
+    "Get Today's Meetings": {
+      "main": [
+        [
+          {
+            "node": "Filter Real Meetings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filter Real Meetings": {
+      "main": [
+        [
+          {
+            "node": "Loop Through Meetings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Loop Through Meetings": {
+      "main": [
+        [],
+        [
+          {
+            "node": "Extract Meeting Data",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Extract Meeting Data": {
+      "main": [
+        [
+          {
+            "node": "Search Related Emails1",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Search Drive Documents",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Search Previous Meetings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Related Emails1": {
+      "main": [
+        [
+          {
+            "node": "Merge All Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Drive Documents": {
+      "main": [
+        [
+          {
+            "node": "Merge All Context",
+            "type": "main",
+            "index": 1
+          }
+        ]
+      ]
+    },
+    "Format Briefing Output": {
+      "main": [
+        [
+          {
+            "node": "Save to Notion (Optional)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Email Briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save to Notion (Optional)": {
+      "main": [
+        []
+      ]
+    },
+    "Email Briefing": {
+      "main": [
+        [
+          {
+            "node": "Loop Through Meetings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get Today's Meetings",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare AI Context": {
+      "main": [
+        [
+          {
+            "node": "Generate Meeting Briefing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search Previous Meetings": {
+      "main": [
+        [
+          {
+            "node": "Merge All Context",
+            "type": "main",
+            "index": 2
+          }
+        ]
+      ]
+    },
+    "Merge All Context": {
+      "main": [
+        [
+          {
+            "node": "Prepare AI Context",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Generate Meeting Briefing": {
+      "main": [
+        [
+          {
+            "node": "Format Briefing Output",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "versionId": "77802a86-1a3e-4332-9f2a-e4b4b68bac9a",
+  "meta": {
+    "instanceId": "1a78162823e5db613f1a643112f709af771e976f8a926aa9b3e26e43d71b7f51"
+  },
+  "id": "6PPi9ecJuAjbsFl9",
+  "tags": [
+    {
+      "updatedAt": "2025-12-26T11:44:20.680Z",
+      "createdAt": "2025-12-26T11:44:20.680Z",
+      "id": "ZYKy88dvErbBf0Gi",
+      "name": "3 complimentary"
+    }
+  ]
+}
