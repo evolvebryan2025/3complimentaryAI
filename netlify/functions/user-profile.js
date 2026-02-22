@@ -66,7 +66,7 @@ exports.handler = async (event) => {
             const body = JSON.parse(event.body);
 
             // Only allow updating specific fields
-            const allowedFields = ['name', 'calendar_id', 'send_time', 'timezone', 'is_active', 'theme_preference'];
+            const allowedFields = ['name', 'calendar_id', 'send_time', 'timezone', 'is_active', 'theme_preference', 'strategic_goals'];
             const updates = {};
 
             for (const field of allowedFields) {

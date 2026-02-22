@@ -546,7 +546,7 @@ function composeEmail(meetingBriefs, user) {
 </body></html>`;
 
     return {
-        subject: `Meeting Brief: ${total} meeting${total !== 1 ? 's' : ''} today — ${today}`,
+        subject: `Meeting Brief: ${total} meeting${total !== 1 ? 's' : ''} today - ${today}`,
         html,
     };
 }

@@ -625,7 +625,7 @@ def compose_email(meeting_briefs: list, user: dict) -> dict:
     """
 
     return {
-        "subject": f"📅 Meeting Prep Brief: {total} meeting{'s' if total != 1 else ''} today — {today}",
+        "subject": f"Meeting Prep Brief: {total} meeting{'s' if total != 1 else ''} today - {today}",
         "html": html,
     }
 

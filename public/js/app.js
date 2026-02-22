@@ -13,38 +13,9 @@ const CONFIG = {
 let currentUser = null;
 let isMenuOpen = false;
 
-// ─── Theme Management ───
+// ─── Theme (Dark Only) ───
 function initTheme() {
-    const saved = localStorage.getItem('meetprep-theme') || 'light';
-    applyTheme(saved);
-
-    // Update radio buttons if they exist
-    const radio = document.querySelector(`input[name="theme"][value="${saved}"]`);
-    if (radio) radio.checked = true;
-}
-
-function toggleTheme() {
-    const current = document.documentElement.getAttribute('data-theme');
-    const next = current === 'dark' ? 'light' : 'dark';
-    setTheme(next);
-}
-
-function setTheme(theme) {
-    if (theme === 'system') {
-        const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
-        applyTheme(prefersDark ? 'dark' : 'light');
-    } else {
-        applyTheme(theme);
-    }
-    localStorage.setItem('meetprep-theme', theme);
-
-    // Update radio buttons
-    const radio = document.querySelector(`input[name="theme"][value="${theme}"]`);
-    if (radio) radio.checked = true;
-}
-
-function applyTheme(theme) {
-    document.documentElement.setAttribute('data-theme', theme);
+    document.documentElement.setAttribute('data-theme', 'dark');
 }
 
 // ─── Navigation & Pages ───
@@ -171,9 +142,15 @@ function updateUserUI() {
     const activeToggle = document.getElementById('profile-active');
     if (activeToggle) activeToggle.checked = currentUser.is_active !== false;
 
-    // Theme preference
-    if (currentUser.theme_preference) {
-        setTheme(currentUser.theme_preference);
+    // Strategic goals
+    const goalsEl = document.getElementById('profile-strategic-goals');
+    if (goalsEl && currentUser.strategic_goals) {
+        try {
+            const parsed = JSON.parse(currentUser.strategic_goals);
+            goalsEl.value = Array.isArray(parsed) ? parsed.join('\n') : currentUser.strategic_goals;
+        } catch {
+            goalsEl.value = currentUser.strategic_goals;
+        }
     }
 
     // Load history
@@ -185,13 +162,17 @@ async function saveProfile(event) {
     event.preventDefault();
     showLoading(true);
 
+    // Parse strategic goals from textarea (one per line) into JSON array
+    const goalsRaw = document.getElementById('profile-strategic-goals')?.value || '';
+    const goalsArray = goalsRaw.split('\n').map(g => g.trim()).filter(g => g.length > 0);
+
     const profileData = {
         name: document.getElementById('profile-name')?.value,
         calendar_id: document.getElementById('profile-calendar')?.value || 'primary',
         send_time: document.getElementById('profile-time')?.value || '07:00',
         timezone: document.getElementById('profile-timezone')?.value || 'Asia/Dubai',
         is_active: document.getElementById('profile-active')?.checked ?? true,
-        theme_preference: document.querySelector('input[name="theme"]:checked')?.value || 'light',
+        strategic_goals: JSON.stringify(goalsArray),
     };
 
     try {
@@ -432,16 +413,264 @@ function showResult(el, type, message) {
     el.style.display = 'block';
 }
 
+// ─── Generate Priorities Now ───
+async function handleGeneratePriorities() {
+    const btn = document.getElementById('generate-priorities-btn');
+    const resultEl = document.getElementById('generate-priorities-result');
+    const displayEl = document.getElementById('priorities-display');
+    const textEl = btn?.querySelector('.btn-generate-text');
+    const iconEl = btn?.querySelector('.btn-generate-icon');
+    const loadingEl = btn?.querySelector('.btn-generate-loading');
+
+    // Show loading state
+    if (btn) btn.disabled = true;
+    if (textEl) textEl.style.display = 'none';
+    if (iconEl) iconEl.style.display = 'none';
+    if (loadingEl) loadingEl.style.display = 'inline-flex';
+    if (resultEl) resultEl.style.display = 'none';
+    if (displayEl) displayEl.style.display = 'none';
+
+    try {
+        const response = await fetch(`${CONFIG.apiBase}/generate-priorities`, {
+            method: 'POST',
+            credentials: 'include',
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showResult(resultEl, 'success',
+                `✅ ${data.message}<br>` +
+                `📊 Analyzed: ${data.dataSources?.calendarEvents || 0} calendar events, ` +
+                `${data.dataSources?.emailsProcessed || 0} emails, ` +
+                `${data.dataSources?.tasksReviewed || 0} tasks`
+            );
+
+            // Display the priorities inline
+            if (displayEl && data.priorities) {
+                displayEl.innerHTML = renderPrioritiesMarkdown(data.priorities, data.metrics);
+                displayEl.style.display = 'block';
+            }
+
+            loadBriefingHistory();
+        } else {
+            showResult(resultEl, 'error', `❌ ${data.error || 'Something went wrong. Please try again.'}`);
+        }
+    } catch (err) {
+        showResult(resultEl, 'error', '❌ Network error. Please check your connection and try again.');
+    }
+
+    // Reset button
+    if (btn) btn.disabled = false;
+    if (textEl) textEl.style.display = 'inline';
+    if (iconEl) iconEl.style.display = 'inline';
+    if (loadingEl) loadingEl.style.display = 'none';
+}
+
+function renderPrioritiesMarkdown(markdown, metrics) {
+    // Convert markdown to HTML for inline display
+    let html = markdown
+        .replace(/### (.*)/g, '<h4 class="priorities-h4">$1</h4>')
+        .replace(/## (.*)/g, '<h3 class="priorities-h3">$1</h3>')
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/^- (.*)/gm, '<li>$1</li>');
+
+    // Wrap consecutive <li> in <ul>
+    html = html.replace(/(<li>.*?<\/li>\n?)+/gs, match => `<ul>${match}</ul>`);
+
+    // Wrap remaining lines as paragraphs
+    html = html.split('\n').map(line => {
+        const trimmed = line.trim();
+        if (!trimmed) return '';
+        if (/^<(h[34]|ul|li|strong)/.test(trimmed)) return line;
+        return `<p>${trimmed}</p>`;
+    }).join('\n');
+
+    // Build metrics bar
+    const metricsHtml = metrics ? `
+        <div class="priorities-metrics">
+            <div class="priorities-metric">
+                <span class="priorities-metric-value">${parseFloat((metrics.meetingLoad || 0).toFixed(1))}h</span>
+                <span class="priorities-metric-label">Meetings</span>
+            </div>
+            <div class="priorities-metric">
+                <span class="priorities-metric-value">${parseFloat((metrics.availableFocusHours || 0).toFixed(1))}h</span>
+                <span class="priorities-metric-label">Focus</span>
+            </div>
+            <div class="priorities-metric">
+                <span class="priorities-metric-value">${metrics.pendingDecisions || 0}</span>
+                <span class="priorities-metric-label">Decisions</span>
+            </div>
+            <div class="priorities-metric">
+                <span class="priorities-metric-value">${metrics.overdueItems || 0}</span>
+                <span class="priorities-metric-label">Overdue</span>
+            </div>
+        </div>
+    ` : '';
+
+    return metricsHtml + `<div class="priorities-content">${html}</div>`;
+}
+
+// ─── Inbox Summary ───
+async function handleInboxSummary() {
+    const btn = document.getElementById('generate-inbox-btn');
+    const resultEl = document.getElementById('generate-inbox-result');
+    const displayEl = document.getElementById('inbox-display');
+    const textEl = btn?.querySelector('.btn-generate-text');
+    const iconEl = btn?.querySelector('.btn-generate-icon');
+    const loadingEl = btn?.querySelector('.btn-generate-loading');
+
+    // Show loading state
+    if (btn) btn.disabled = true;
+    if (textEl) textEl.style.display = 'none';
+    if (iconEl) iconEl.style.display = 'none';
+    if (loadingEl) loadingEl.style.display = 'inline-flex';
+    if (resultEl) resultEl.style.display = 'none';
+    if (displayEl) displayEl.style.display = 'none';
+
+    try {
+        const response = await fetch(`${CONFIG.apiBase}/inbox-summary`, {
+            method: 'POST',
+            credentials: 'include',
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showResult(resultEl, 'success', `✅ ${data.message}`);
+
+            if (displayEl && data.categories) {
+                displayEl.innerHTML = renderInboxSummary(data.categories, data.summary, data.generatedAt);
+                displayEl.style.display = 'block';
+            }
+        } else {
+            showResult(resultEl, 'error', `❌ ${data.error || 'Something went wrong. Please try again.'}`);
+        }
+    } catch (err) {
+        showResult(resultEl, 'error', '❌ Network error. Please check your connection and try again.');
+    }
+
+    // Reset button
+    if (btn) btn.disabled = false;
+    if (textEl) textEl.style.display = 'inline';
+    if (iconEl) iconEl.style.display = 'inline';
+    if (loadingEl) loadingEl.style.display = 'none';
+}
+
+function renderInboxSummary(categories, summary, generatedAt) {
+    const categoryConfig = {
+        highPriority: {
+            label: 'High Priority',
+            icon: '🔴',
+            colorClass: 'inbox-cat-high',
+            description: 'Urgent — needs immediate attention',
+        },
+        actionRequired: {
+            label: 'Action Required',
+            icon: '🟠',
+            colorClass: 'inbox-cat-action',
+            description: 'Requires a decision, reply, or task',
+        },
+        followUp: {
+            label: 'Follow-Up',
+            icon: '🔵',
+            colorClass: 'inbox-cat-follow',
+            description: 'Ongoing threads to monitor',
+        },
+        deadlines: {
+            label: 'Deadlines',
+            icon: '🟡',
+            colorClass: 'inbox-cat-deadline',
+            description: 'Time-sensitive with specific dates',
+        },
+    };
+
+    // Summary bar
+    const total = (summary?.highPriority || 0) + (summary?.actionRequired || 0) +
+        (summary?.followUp || 0) + (summary?.deadlines || 0);
+
+    let html = `
+        <div class="inbox-summary-bar">
+            <div class="inbox-summary-stat">
+                <span class="inbox-stat-value">${total}</span>
+                <span class="inbox-stat-label">Total</span>
+            </div>
+            <div class="inbox-summary-stat inbox-stat-high">
+                <span class="inbox-stat-value">${summary?.highPriority || 0}</span>
+                <span class="inbox-stat-label">High Priority</span>
+            </div>
+            <div class="inbox-summary-stat inbox-stat-action">
+                <span class="inbox-stat-value">${summary?.actionRequired || 0}</span>
+                <span class="inbox-stat-label">Action</span>
+            </div>
+            <div class="inbox-summary-stat inbox-stat-follow">
+                <span class="inbox-stat-value">${summary?.followUp || 0}</span>
+                <span class="inbox-stat-label">Follow-Up</span>
+            </div>
+            <div class="inbox-summary-stat inbox-stat-deadline">
+                <span class="inbox-stat-value">${summary?.deadlines || 0}</span>
+                <span class="inbox-stat-label">Deadlines</span>
+            </div>
+        </div>
+    `;
+
+    // Render each category
+    for (const [key, config] of Object.entries(categoryConfig)) {
+        const emails = categories[key] || [];
+        if (emails.length === 0) continue;
+
+        html += `
+            <div class="inbox-category ${config.colorClass}">
+                <div class="inbox-category-header">
+                    <span class="inbox-category-icon">${config.icon}</span>
+                    <div>
+                        <h3 class="inbox-category-title">${config.label} <span class="inbox-category-count">${emails.length}</span></h3>
+                        <p class="inbox-category-desc">${config.description}</p>
+                    </div>
+                </div>
+                <div class="inbox-email-list">
+                    ${emails.map(email => `
+                        <a href="${email.gmailLink}" target="_blank" rel="noopener noreferrer" class="inbox-email-item">
+                            <div class="inbox-email-top">
+                                <span class="inbox-email-from">${escapeHtml(email.from)}</span>
+                                <span class="inbox-email-date">${email.date}</span>
+                            </div>
+                            <div class="inbox-email-subject">${escapeHtml(email.subject)}</div>
+                            <div class="inbox-email-snippet">${escapeHtml(email.snippet)}</div>
+                        </a>
+                    `).join('')}
+                </div>
+            </div>
+        `;
+    }
+
+    // Empty state
+    if (total === 0) {
+        html += `
+            <div class="inbox-empty">
+                <span class="inbox-empty-icon">🎉</span>
+                <h3>Inbox Zero!</h3>
+                <p>No important emails in the last 24 hours. Enjoy your focus time!</p>
+            </div>
+        `;
+    }
+
+    // Footer
+    if (generatedAt) {
+        html += `<div class="inbox-footer">Generated ${generatedAt}</div>`;
+    }
+
+    return html;
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
 // ─── Initialization ───
 document.addEventListener('DOMContentLoaded', () => {
     initTheme();
     checkSession();
-
-    // Listen for system theme changes
-    window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
-        const saved = localStorage.getItem('meetprep-theme');
-        if (saved === 'system') {
-            setTheme('system');
-        }
-    });
 });

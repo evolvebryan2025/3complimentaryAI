@@ -1,0 +1,294 @@
+// Inbox Summary — AI-powered email categorization
+// Replicates the n8n "Executive Summary Inbox" workflow as a Netlify function
+const { google } = require('googleapis');
+const { createClient } = require('@supabase/supabase-js');
+const jwt = require('jsonwebtoken');
+const cookie = require('cookie');
+const OpenAI = require('openai');
+
+// ─── Auth Helper ───
+function getUserIdFromCookie(event) {
+    const jwtSecret = process.env.JWT_SECRET || process.env.ENCRYPTION_KEY;
+    const cookies = cookie.parse(event.headers.cookie || '');
+    const token = cookies.meetprep_session;
+    if (!token) return null;
+    try {
+        return jwt.verify(token, jwtSecret).userId;
+    } catch {
+        return null;
+    }
+}
+
+// ─── Main Handler ───
+exports.handler = async (event) => {
+    if (event.httpMethod !== 'POST') {
+        return { statusCode: 405, body: JSON.stringify({ error: 'Method not allowed' }) };
+    }
+
+    const userId = getUserIdFromCookie(event);
+    if (!userId) {
+        return { statusCode: 401, body: JSON.stringify({ error: 'Not authenticated' }) };
+    }
+
+    const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
+
+    try {
+        // 1. Get user with tokens
+        const { data: user, error: userErr } = await supabase
+            .from('users')
+            .select('*')
+            .eq('id', userId)
+            .single();
+
+        if (userErr || !user) {
+            return { statusCode: 404, body: JSON.stringify({ error: 'User not found' }) };
+        }
+
+        if (!user.google_access_token) {
+            return { statusCode: 400, body: JSON.stringify({ error: 'No Google connection found. Please reconnect.' }) };
+        }
+
+        // 2. Set up Google OAuth client
+        const oauth2Client = new google.auth.OAuth2(
+            process.env.GOOGLE_CLIENT_ID,
+            process.env.GOOGLE_CLIENT_SECRET
+        );
+
+        oauth2Client.setCredentials({
+            access_token: user.google_access_token,
+            refresh_token: user.google_refresh_token,
+            expiry_date: user.google_token_expiry ? new Date(user.google_token_expiry).getTime() : null,
+        });
+
+        // Refresh token if expired
+        try {
+            const { credentials } = await oauth2Client.refreshAccessToken();
+            oauth2Client.setCredentials(credentials);
+
+            if (credentials.access_token !== user.google_access_token) {
+                await supabase.from('users').update({
+                    google_access_token: credentials.access_token,
+                    google_token_expiry: credentials.expiry_date ? new Date(credentials.expiry_date).toISOString() : null,
+                }).eq('id', userId);
+            }
+        } catch (refreshErr) {
+            console.log('Token refresh note:', refreshErr.message);
+        }
+
+        // 3. Fetch emails from last 24 hours (IMPORTANT label or unread/starred)
+        const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+        const after24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const afterDate = Math.floor(after24h.getTime() / 1000);
+
+        const messagesRes = await gmail.users.messages.list({
+            userId: 'me',
+            q: `(is:important OR is:starred OR is:unread) after:${afterDate}`,
+            maxResults: 30,
+        });
+
+        const messageIds = messagesRes.data.messages || [];
+
+        if (messageIds.length === 0) {
+            return {
+                statusCode: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: true,
+                    message: 'No important emails in the last 24 hours. Inbox Zero! 🎉',
+                    totalEmails: 0,
+                    categories: {
+                        highPriority: [],
+                        actionRequired: [],
+                        followUp: [],
+                        deadlines: [],
+                    },
+                }),
+            };
+        }
+
+        // 4. Fetch full email details (parallel, batched)
+        const emails = [];
+        for (const msg of messageIds.slice(0, 30)) {
+            try {
+                const full = await gmail.users.messages.get({
+                    userId: 'me',
+                    id: msg.id,
+                    format: 'full',
+                });
+
+                const headers = {};
+                (full.data.payload?.headers || []).forEach((h) => {
+                    headers[h.name.toLowerCase()] = h.value;
+                });
+
+                // Extract plain text body
+                let bodyText = '';
+                if (full.data.payload?.body?.data) {
+                    bodyText = Buffer.from(full.data.payload.body.data, 'base64').toString('utf-8');
+                } else if (full.data.payload?.parts) {
+                    const textPart = full.data.payload.parts.find(p => p.mimeType === 'text/plain');
+                    if (textPart?.body?.data) {
+                        bodyText = Buffer.from(textPart.body.data, 'base64').toString('utf-8');
+                    }
+                }
+
+                emails.push({
+                    id: msg.id,
+                    threadId: full.data.threadId,
+                    subject: headers['subject'] || 'No Subject',
+                    from: headers['from'] || 'Unknown',
+                    date: headers['date'] || '',
+                    snippet: full.data.snippet || '',
+                    text: bodyText.substring(0, 500), // First 500 chars for classification
+                    labels: full.data.labelIds || [],
+                });
+            } catch (emailErr) {
+                console.log('Error fetching email:', emailErr.message);
+            }
+        }
+
+        if (emails.length === 0) {
+            return {
+                statusCode: 200,
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    success: true,
+                    message: 'Could not retrieve email details.',
+                    totalEmails: 0,
+                    categories: {
+                        highPriority: [],
+                        actionRequired: [],
+                        followUp: [],
+                        deadlines: [],
+                    },
+                }),
+            };
+        }
+
+        // 5. Use OpenAI to classify each email into categories
+        const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+        // Build a batch classification prompt for efficiency
+        const emailSummaries = emails.map((e, i) => (
+            `[Email ${i + 1}]\nFrom: ${e.from}\nSubject: ${e.subject}\nSnippet: ${e.snippet}\nBody Preview: ${e.text.substring(0, 200)}`
+        )).join('\n\n');
+
+        const classificationResponse = await openai.chat.completions.create({
+            model: 'gpt-4o-mini',
+            messages: [
+                {
+                    role: 'system',
+                    content: `You are an email classifier for a busy executive. Classify each email into EXACTLY ONE category:
+
+- highPriority: Urgent, from leadership/VIPs, critical business matters, legal/financial
+- actionRequired: Requires a decision, approval, signature, reply, or specific action
+- followUp: Part of ongoing threads, waiting for replies, check back later
+- deadlines: Mentions specific dates, time-sensitive, due dates, ASAP requests
+
+If an email doesn't clearly fit, choose the MOST relevant category based on intent.
+
+Respond in this exact JSON format (no markdown, no explanation):
+[{"index":1,"category":"highPriority"},{"index":2,"category":"actionRequired"},...]
+
+Classify ALL emails. Use 1-based indexing matching [Email N].`
+                },
+                {
+                    role: 'user',
+                    content: `Classify these ${emails.length} emails:\n\n${emailSummaries}`
+                }
+            ],
+            temperature: 0.2,
+            max_tokens: 1000,
+        });
+
+        // 6. Parse AI classification
+        let classifications = [];
+        try {
+            const raw = classificationResponse.choices[0].message.content.trim();
+            // Remove markdown code fences if present
+            const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+            classifications = JSON.parse(cleaned);
+        } catch (parseErr) {
+            console.error('Classification parse error:', parseErr.message);
+            // Fallback: assign all as highPriority
+            classifications = emails.map((_, i) => ({ index: i + 1, category: 'highPriority' }));
+        }
+
+        // 7. Sort emails into categories
+        const categories = {
+            highPriority: [],
+            actionRequired: [],
+            followUp: [],
+            deadlines: [],
+        };
+
+        const validCategories = ['highPriority', 'actionRequired', 'followUp', 'deadlines'];
+
+        for (const classification of classifications) {
+            const idx = classification.index - 1;
+            const cat = validCategories.includes(classification.category) ? classification.category : 'highPriority';
+
+            if (idx >= 0 && idx < emails.length) {
+                const email = emails[idx];
+
+                // Clean up the "from" field for display
+                const fromClean = email.from.replace(/<[^>]+>/g, '').trim() || email.from;
+
+                // Parse date for clean display
+                let dateFormatted = '';
+                try {
+                    const d = new Date(email.date);
+                    dateFormatted = d.toLocaleDateString('en-US', {
+                        weekday: 'short',
+                        month: 'short',
+                        day: 'numeric',
+                        hour: 'numeric',
+                        minute: '2-digit',
+                        hour12: true,
+                    });
+                } catch {
+                    dateFormatted = email.date;
+                }
+
+                categories[cat].push({
+                    id: email.id,
+                    threadId: email.threadId,
+                    subject: email.subject,
+                    from: fromClean,
+                    date: dateFormatted,
+                    snippet: email.snippet.substring(0, 150),
+                    gmailLink: `https://mail.google.com/mail/u/0/#inbox/${email.id}`,
+                });
+            }
+        }
+
+        const totalCategorized = Object.values(categories).reduce((sum, arr) => sum + arr.length, 0);
+
+        return {
+            statusCode: 200,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                success: true,
+                message: `Scanned ${emails.length} emails, categorized ${totalCategorized} items.`,
+                totalEmails: emails.length,
+                categorizedCount: totalCategorized,
+                generatedAt: new Date().toLocaleString(),
+                categories,
+                summary: {
+                    highPriority: categories.highPriority.length,
+                    actionRequired: categories.actionRequired.length,
+                    followUp: categories.followUp.length,
+                    deadlines: categories.deadlines.length,
+                },
+            }),
+        };
+    } catch (err) {
+        console.error('Inbox summary error:', err);
+        return {
+            statusCode: 500,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ error: `Failed to generate inbox summary: ${err.message}` }),
+        };
+    }
+};

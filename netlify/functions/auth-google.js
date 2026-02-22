@@ -15,6 +15,7 @@ exports.handler = async (event) => {
         'https://www.googleapis.com/auth/gmail.readonly',
         'https://www.googleapis.com/auth/gmail.send',
         'https://www.googleapis.com/auth/drive.readonly',
+        'https://www.googleapis.com/auth/tasks.readonly',
     ];
 
     const authUrl = oauth2Client.generateAuthUrl({

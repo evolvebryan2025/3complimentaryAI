@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="light">
+<html lang="en" data-theme="dark">
 
 <head>
     <meta charset="UTF-8">
@@ -22,13 +22,10 @@
         <nav class="nav-landing">
             <div class="nav-container">
                 <a href="/home" class="nav-logo">
-                    <img src="https://madeeas.com/wp-content/uploads/2025/09/foooter-logo-1024x143.png" alt="MadeEA" class="logo-img">
+                    <img src="https://madeeas.com/wp-content/uploads/2025/09/foooter-logo-1024x143.png" alt="MadeEA"
+                        class="logo-img">
                 </a>
                 <div class="nav-actions">
-                    <button class="btn-theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
-                        <span class="theme-icon-light">☀️</span>
-                        <span class="theme-icon-dark">🌙</span>
-                    </button>
                     <a href="#" class="btn btn-outline" onclick="showSignIn(event)">Sign In</a>
                 </div>
             </div>
@@ -163,7 +160,8 @@
             <div class="footer-container">
                 <div class="footer-brand">
                     <a href="/home">
-                        <img src="https://madeeas.com/wp-content/uploads/2025/09/foooter-logo-1024x143.png" alt="MadeEA" class="logo-img">
+                        <img src="https://madeeas.com/wp-content/uploads/2025/09/foooter-logo-1024x143.png" alt="MadeEA"
+                            class="logo-img">
                     </a>
                     <p class="footer-tagline">Meeting Preparation Automation</p>
                 </div>
@@ -197,13 +195,10 @@
         <nav class="nav-dashboard">
             <div class="nav-container">
                 <a href="/home" class="nav-logo">
-                    <img src="https://madeeas.com/wp-content/uploads/2025/09/foooter-logo-1024x143.png" alt="MadeEA" class="logo-img">
+                    <img src="https://madeeas.com/wp-content/uploads/2025/09/foooter-logo-1024x143.png" alt="MadeEA"
+                        class="logo-img">
                 </a>
                 <div class="nav-actions">
-                    <button class="btn-theme-toggle" onclick="toggleTheme()" aria-label="Toggle theme">
-                        <span class="theme-icon-light">☀️</span>
-                        <span class="theme-icon-dark">🌙</span>
-                    </button>
                     <div class="user-menu" id="user-menu">
                         <button class="user-menu-btn" onclick="toggleUserMenu()">
                             <img id="user-avatar" src="" alt="Profile" class="user-avatar">
@@ -297,6 +292,50 @@
                         <div id="generate-brief-result" class="generate-result" style="display:none;"></div>
                     </div>
 
+                    <!-- Priority Alignment -->
+                    <div class="generate-brief-section">
+                        <div class="generate-brief-card priorities-card">
+                            <div class="generate-brief-info">
+                                <h2>🎯 Priority Alignment</h2>
+                                <p>Analyze your calendar, emails, and tasks to generate today's Top 5 Priorities aligned
+                                    with your strategic goals. Sent to your email.</p>
+                            </div>
+                            <button id="generate-priorities-btn" class="btn btn-primary btn-generate"
+                                onclick="handleGeneratePriorities()">
+                                <span class="btn-generate-icon">🎯</span>
+                                <span class="btn-generate-text">Generate Priorities</span>
+                                <span class="btn-generate-loading" style="display:none;">
+                                    <span class="spinner-small"></span>
+                                    Analyzing...
+                                </span>
+                            </button>
+                        </div>
+                        <div id="generate-priorities-result" class="generate-result" style="display:none;"></div>
+                        <div id="priorities-display" class="priorities-display" style="display:none;"></div>
+                    </div>
+
+                    <!-- Inbox Summary -->
+                    <div class="generate-brief-section">
+                        <div class="generate-brief-card inbox-card">
+                            <div class="generate-brief-info">
+                                <h2>📬 Inbox Summary</h2>
+                                <p>Scan your inbox for important, starred, and unread emails from the last 24 hours. AI
+                                    classifies them into High Priority, Action Required, Follow-Up, and Deadlines.</p>
+                            </div>
+                            <button id="generate-inbox-btn" class="btn btn-primary btn-generate"
+                                onclick="handleInboxSummary()">
+                                <span class="btn-generate-icon">📬</span>
+                                <span class="btn-generate-text">Scan Inbox</span>
+                                <span class="btn-generate-loading" style="display:none;">
+                                    <span class="spinner-small"></span>
+                                    Scanning...
+                                </span>
+                            </button>
+                        </div>
+                        <div id="generate-inbox-result" class="generate-result" style="display:none;"></div>
+                        <div id="inbox-display" class="inbox-display" style="display:none;"></div>
+                    </div>
+
                     <!-- Quick Actions -->
                     <div class="quick-actions">
                         <h2>Quick Actions</h2>
@@ -385,27 +424,18 @@
                             </div>
                         </div>
 
-                        <!-- Preferences -->
+                        <!-- Strategic Goals -->
                         <div class="form-card">
                             <h3 class="form-card-title">
-                                <span>🎨</span> Appearance
+                                <span>🎯</span> Priority Alignment
                             </h3>
                             <div class="form-group">
-                                <label>Theme Preference</label>
-                                <div class="theme-options">
-                                    <label class="theme-option">
-                                        <input type="radio" name="theme" value="light" onchange="setTheme('light')">
-                                        <span class="theme-option-label">☀️ Light</span>
-                                    </label>
-                                    <label class="theme-option">
-                                        <input type="radio" name="theme" value="dark" onchange="setTheme('dark')">
-                                        <span class="theme-option-label">🌙 Dark</span>
-                                    </label>
-                                    <label class="theme-option">
-                                        <input type="radio" name="theme" value="system" onchange="setTheme('system')">
-                                        <span class="theme-option-label">💻 System</span>
-                                    </label>
-                                </div>
+                                <label for="profile-strategic-goals">Strategic Goals</label>
+                                <textarea id="profile-strategic-goals" class="form-input form-textarea" rows="5"
+                                    placeholder="Enter your current strategic goals (one per line)&#10;&#10;Example:&#10;Drive Q4 revenue to $2M&#10;Complete product launch by Dec 15&#10;Strengthen key partnerships&#10;Hire 2 senior engineers"></textarea>
+                                <span class="form-hint">These goals are used by the Priority Alignment AI to rank your
+                                    daily
+                                    priorities. One goal per line.</span>
                             </div>
                         </div>
 
