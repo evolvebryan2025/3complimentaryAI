@@ -240,6 +240,102 @@ img {
     filter: brightness(1.1);
 }
 
+/* ---------- Auth Forms ---------- */
+.auth-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 0;
+    margin-bottom: var(--space-lg);
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-md);
+    padding: 4px;
+    max-width: 360px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.auth-tab {
+    flex: 1;
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    font-family: var(--font-primary);
+    font-size: 0.9rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.auth-tab.active {
+    background: var(--bg-card);
+    color: var(--text-primary);
+    box-shadow: var(--shadow-sm);
+}
+
+.auth-form {
+    max-width: 360px;
+    margin: 0 auto;
+}
+
+.auth-form-group {
+    margin-bottom: var(--space-md);
+}
+
+.btn-full {
+    width: 100%;
+    justify-content: center;
+}
+
+.auth-message {
+    margin-top: var(--space-md);
+    font-size: 0.85rem;
+    text-align: center;
+    min-height: 1.2em;
+}
+
+.auth-message-error {
+    color: var(--danger-text);
+}
+
+.auth-message-success {
+    color: var(--success-text);
+}
+
+/* ---------- Google Feature Gate Overlay ---------- */
+.google-gate-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(10, 11, 20, 0.85);
+    -webkit-backdrop-filter: blur(4px);
+    backdrop-filter: blur(4px);
+    border-radius: var(--radius-lg);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+    border: 2px dashed var(--border-primary);
+}
+
+.google-gate-overlay p {
+    color: var(--text-secondary);
+    font-size: 0.95rem;
+    text-align: center;
+    padding: var(--space-lg);
+}
+
+.google-gate-overlay a {
+    color: var(--text-accent);
+    text-decoration: underline;
+}
+
+/* ---------- Small Button Variant ---------- */
+.btn-sm {
+    padding: 6px 16px;
+    font-size: 0.8rem;
+}
+
 /* ---------- Hero Section ---------- */
 .hero {
     min-height: 100vh;

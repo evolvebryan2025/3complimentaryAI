@@ -5,9 +5,20 @@
 // ─── Configuration ───
 const CONFIG = {
     apiBase: '/api',
-    supabaseUrl: null, // Set from server
-    supabaseKey: null, // Set from server
 };
+
+// ─── Supabase Client ───
+// Supabase anon key is public and safe to include client-side
+const SUPABASE_URL = 'https://ahzqnsxcwvspnncuwfjw.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImFoenFuc3hjd3ZzcG5uY3V3Zmp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzEzMTcwNDgsImV4cCI6MjA4Njg5MzA0OH0.JHLjkpc2bVKJ1VdK5u7SHVsC4D2_HL_Qr0B3-vlgF10'; // Replace with your anon key from Supabase Dashboard → Settings → API
+let supabaseClient = null;
+try {
+    if (SUPABASE_ANON_KEY && window.supabase) {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+    }
+} catch (e) {
+    console.warn('Supabase client init skipped:', e.message);
+}
 
 // ─── State ───
 let currentUser = null;
@@ -59,17 +70,175 @@ document.addEventListener('click', (e) => {
     }
 });
 
-// ─── Google Sign In ───
-function showSignIn(event) {
+// ─── Auth Forms ───
+function scrollToAuth(event) {
     if (event) event.preventDefault();
+    const el = document.getElementById('signin-email');
+    if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        setTimeout(() => el.focus(), 400);
+    }
+}
+
+function switchAuthTab(tab) {
+    document.querySelectorAll('.auth-tab').forEach(t => t.classList.toggle('active', t.dataset.tab === tab));
+    document.getElementById('auth-signin-form').style.display = tab === 'signin' ? 'block' : 'none';
+    document.getElementById('auth-signup-form').style.display = tab === 'signup' ? 'block' : 'none';
+    // Clear messages
+    showAuthMessage('signin-message', '');
+    showAuthMessage('signup-message', '');
+}
+
+function showAuthMessage(id, text, isError = false) {
+    const el = document.getElementById(id);
+    if (!el) return;
+    el.textContent = text;
+    el.className = 'auth-message' + (text ? (isError ? ' auth-message-error' : ' auth-message-success') : '');
+}
+
+async function handleSignUp() {
+    const name = document.getElementById('signup-name')?.value?.trim();
+    const email = document.getElementById('signup-email')?.value?.trim();
+    const password = document.getElementById('signup-password')?.value;
+
+    if (!name || !email || !password) {
+        showAuthMessage('signup-message', 'Please fill in all fields.', true);
+        return;
+    }
+    if (password.length < 6) {
+        showAuthMessage('signup-message', 'Password must be at least 6 characters.', true);
+        return;
+    }
+    if (!supabaseClient) {
+        showAuthMessage('signup-message', 'Auth service unavailable. Please try again later.', true);
+        return;
+    }
+
+    showAuthMessage('signup-message', 'Creating account...');
+
+    const { data, error } = await supabaseClient.auth.signUp({
+        email,
+        password,
+        options: { data: { name } },
+    });
+
+    if (error) {
+        showAuthMessage('signup-message', error.message, true);
+        return;
+    }
+
+    // Supabase sends verification email automatically
+    showAuthMessage('signup-message', 'Check your email for a verification link! Once verified, come back and sign in.');
+}
+
+async function handleSignIn() {
+    const email = document.getElementById('signin-email')?.value?.trim();
+    const password = document.getElementById('signin-password')?.value;
+
+    if (!email || !password) {
+        showAuthMessage('signin-message', 'Please fill in all fields.', true);
+        return;
+    }
+    if (!supabaseClient) {
+        showAuthMessage('signin-message', 'Auth service unavailable. Please try again later.', true);
+        return;
+    }
+
+    showAuthMessage('signin-message', 'Signing in...');
+
+    const { data, error } = await supabaseClient.auth.signInWithPassword({ email, password });
+
+    if (error) {
+        showAuthMessage('signin-message', error.message, true);
+        return;
+    }
+
+    // Bridge to our JWT cookie session
+    showAuthMessage('signin-message', 'Authenticating...');
+
+    try {
+        const response = await fetch(`${CONFIG.apiBase}/auth-email`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ access_token: data.session.access_token }),
+        });
+
+        const result = await response.json();
+
+        if (!response.ok) {
+            showAuthMessage('signin-message', result.error || 'Authentication failed.', true);
+            return;
+        }
+
+        // Success — reload session
+        showAuthMessage('signin-message', '');
+        await checkSession();
+    } catch (err) {
+        showAuthMessage('signin-message', 'Network error. Please try again.', true);
+    }
+}
+
+// ─── Google Connect / Disconnect ───
+function handleConnectGoogle() {
+    window.location.href = `${CONFIG.apiBase}/auth-google`;
+}
+
+async function handleDisconnectGoogle() {
+    if (!confirm('Disconnect Google? Features like Briefs, Priorities, and Inbox will be unavailable until you reconnect.')) {
+        return;
+    }
+
     showLoading(true);
 
-    // Redirect to our OAuth endpoint
-    window.location.href = `${CONFIG.apiBase}/auth-google`;
+    try {
+        const response = await fetch(`${CONFIG.apiBase}/google-disconnect`, {
+            method: 'POST',
+            credentials: 'include',
+        });
+
+        if (response.ok) {
+            currentUser.google_connected = false;
+            currentUser.avatar_url = null;
+            updateUserUI();
+            showToast('Google account disconnected.');
+        } else {
+            showToast('Failed to disconnect Google. Please try again.');
+        }
+    } catch (err) {
+        showToast('Network error. Please check your connection.');
+    }
+
+    showLoading(false);
 }
 
 // ─── Auth Session Check ───
 async function checkSession() {
+    // Handle Supabase email verification redirect (hash fragment)
+    if (window.location.hash && window.location.hash.includes('access_token') && supabaseClient) {
+        try {
+            const { data: { session } } = await supabaseClient.auth.getSession();
+            if (session) {
+                await fetch(`${CONFIG.apiBase}/auth-email`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({ access_token: session.access_token }),
+                });
+                window.history.replaceState({}, '', '/');
+            }
+        } catch (e) {
+            console.log('Email verification bridge:', e.message);
+        }
+    }
+
+    // Handle Google connected redirect
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('google') === 'connected') {
+        window.history.replaceState({}, '', '/');
+        showToast('Google account connected successfully!');
+    }
+
     try {
         const response = await fetch(`${CONFIG.apiBase}/auth-session`, {
             credentials: 'include'
@@ -85,15 +254,6 @@ async function checkSession() {
         }
     } catch (err) {
         console.log('No active session');
-    }
-
-    // Check URL for OAuth callback
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('auth') === 'success') {
-        // Clear the URL params
-        window.history.replaceState({}, '', '/');
-        await checkSession();
-        return;
     }
 
     showPage('landing-page');
@@ -114,6 +274,7 @@ function updateUserUI() {
 
     const name = currentUser.name || currentUser.email.split('@')[0];
     const avatar = currentUser.avatar_url || generateAvatarUrl(name);
+    const googleConnected = !!currentUser.google_connected;
 
     // Nav
     setElementText('user-name-nav', name.split(' ')[0]);
@@ -123,9 +284,26 @@ function updateUserUI() {
     setElementText('welcome-name', name.split(' ')[0]);
 
     // Status cards
-    setElementText('connection-status', 'Google Connected');
+    setElementText('connection-status', googleConnected ? 'Google Connected' : 'Google Not Connected');
+    const statusCard = document.querySelector('.status-card-active');
+    if (statusCard) {
+        statusCard.style.borderColor = googleConnected ? 'rgba(56, 239, 125, 0.3)' : 'rgba(255, 107, 107, 0.3)';
+    }
     setElementText('brief-time-display', formatTime(currentUser.send_time || '07:00'));
     setElementText('calendar-display', currentUser.calendar_id === 'primary' ? 'Primary' : currentUser.calendar_id);
+
+    // Feature gate overlays
+    const gateIds = ['gate-brief', 'gate-priorities', 'gate-inbox'];
+    gateIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = googleConnected ? 'none' : 'flex';
+    });
+
+    // Google account card in profile
+    const notConnEl = document.getElementById('google-not-connected');
+    const connEl = document.getElementById('google-connected-info');
+    if (notConnEl) notConnEl.style.display = googleConnected ? 'none' : 'block';
+    if (connEl) connEl.style.display = googleConnected ? 'block' : 'none';
 
     // Profile form
     setElementValue('profile-name', currentUser.name || '');
@@ -212,10 +390,15 @@ async function handleLogout(event) {
         // Continue with logout even if server call fails
     }
 
+    // Also sign out from Supabase Auth
+    if (supabaseClient) {
+        try { await supabaseClient.auth.signOut(); } catch (e) { /* ignore */ }
+    }
+
     currentUser = null;
     localStorage.removeItem('meetprep-session');
     showPage('landing-page');
-    showToast('👋 Signed out successfully');
+    showToast('Signed out successfully');
 }
 
 // ─── Disconnect Account ───

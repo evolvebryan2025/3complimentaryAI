@@ -265,12 +265,20 @@ Classify ALL emails. Use 1-based indexing matching [Email N].`
 
         const totalCategorized = Object.values(categories).reduce((sum, arr) => sum + arr.length, 0);
 
+        // 8. Compose and send email via Gmail
+        const emailHtml = composeInboxEmail(categories, totalCategorized, emails.length);
+        const rawEmail = createRawEmail(user.email, emailHtml.subject, emailHtml.html);
+        await gmail.users.messages.send({
+            userId: 'me',
+            requestBody: { raw: rawEmail },
+        });
+
         return {
             statusCode: 200,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 success: true,
-                message: `Scanned ${emails.length} emails, categorized ${totalCategorized} items.`,
+                message: `Inbox summary sent to your email! Scanned ${emails.length} emails, categorized ${totalCategorized} items.`,
                 totalEmails: emails.length,
                 categorizedCount: totalCategorized,
                 generatedAt: new Date().toLocaleString(),
@@ -292,3 +300,120 @@ Classify ALL emails. Use 1-based indexing matching [Email N].`
         };
     }
 };
+
+// ═══════════════════════════════════════════════
+//  Email Helpers
+// ═══════════════════════════════════════════════
+
+function composeInboxEmail(categories, totalCategorized, totalScanned) {
+    const today = new Date().toLocaleDateString('en-US', {
+        weekday: 'long', month: 'long', day: 'numeric', year: 'numeric',
+    });
+
+    const categoryConfig = {
+        highPriority: { label: 'High Priority', emoji: '🔴', color: '#e53e3e', bg: '#fff5f5' },
+        actionRequired: { label: 'Action Required', emoji: '🟠', color: '#dd6b20', bg: '#fffaf0' },
+        followUp: { label: 'Follow Up', emoji: '🔵', color: '#3182ce', bg: '#ebf8ff' },
+        deadlines: { label: 'Deadlines', emoji: '⏰', color: '#805ad5', bg: '#faf5ff' },
+    };
+
+    let categoryCards = '';
+
+    for (const [key, config] of Object.entries(categoryConfig)) {
+        const items = categories[key];
+        if (!items || items.length === 0) continue;
+
+        let rows = '';
+        for (const item of items) {
+            rows += `
+            <tr>
+              <td style="padding:12px 16px;border-bottom:1px solid #eef0f5;">
+                <div style="font-size:14px;font-weight:600;color:#1a1a2e;margin-bottom:4px;">
+                  <a href="${item.gmailLink}" style="color:#1a1a2e;text-decoration:none;">${item.subject}</a>
+                </div>
+                <div style="font-size:12px;color:#888;margin-bottom:4px;">${item.from} · ${item.date}</div>
+                <div style="font-size:13px;color:#555;line-height:1.4;">${item.snippet}</div>
+              </td>
+            </tr>`;
+        }
+
+        categoryCards += `
+        <div style="margin-bottom:28px;">
+          <div style="display:flex;align-items:center;margin-bottom:12px;">
+            <span style="font-size:16px;margin-right:8px;">${config.emoji}</span>
+            <span style="font-size:16px;font-weight:700;color:${config.color};">${config.label}</span>
+            <span style="background:${config.bg};color:${config.color};font-size:12px;font-weight:600;padding:2px 10px;border-radius:12px;margin-left:10px;">${items.length}</span>
+          </div>
+          <table style="width:100%;border-collapse:collapse;border:1px solid #eef0f5;border-radius:8px;overflow:hidden;">
+            ${rows}
+          </table>
+        </div>`;
+    }
+
+    if (!categoryCards) {
+        categoryCards = `<div style="text-align:center;padding:40px 20px;color:#888;font-size:15px;">No important emails in the last 24 hours. Inbox Zero! 🎉</div>`;
+    }
+
+    // Summary bar
+    const summaryBar = `
+    <div style="display:flex;gap:12px;margin-bottom:28px;flex-wrap:wrap;">
+      ${Object.entries(categoryConfig).map(([key, config]) => `
+        <div style="flex:1;min-width:120px;background:${config.bg};border-radius:8px;padding:12px 16px;text-align:center;">
+          <div style="font-size:22px;font-weight:700;color:${config.color};">${categories[key]?.length || 0}</div>
+          <div style="font-size:11px;color:#888;margin-top:2px;">${config.label}</div>
+        </div>
+      `).join('')}
+    </div>`;
+
+    const html = `<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"></head>
+<body style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;background:#f0f2f5;margin:0;padding:0;">
+  <div style="max-width:680px;margin:0 auto;padding:24px 16px;">
+    <!-- Orange Accent Bar -->
+    <div style="background:#FD5811;height:4px;border-radius:14px 14px 0 0;"></div>
+
+    <!-- Header -->
+    <div style="background:#152E47;padding:28px 32px;color:white;">
+      <img src="https://madeeas.com/wp-content/uploads/2025/09/foooter-logo-1024x143.png" alt="MadeEA" style="height:28px;margin-bottom:16px;">
+      <div style="font-size:13px;text-transform:uppercase;letter-spacing:0.08em;opacity:0.7;margin-bottom:4px;">Executive Inbox Summary</div>
+      <div style="font-size:22px;font-weight:700;">${today}</div>
+      <div style="font-size:14px;opacity:0.85;margin-top:6px;">${totalScanned} emails scanned · ${totalCategorized} categorized</div>
+    </div>
+
+    <!-- Body -->
+    <div style="background:white;padding:32px;box-shadow:0 2px 12px rgba(0,0,0,0.06);">
+      ${summaryBar}
+      ${categoryCards}
+    </div>
+
+    <!-- Footer -->
+    <div style="background:#f8f9fc;border-radius:0 0 14px 14px;padding:20px 32px;border-top:1px solid #eee;">
+      <div style="text-align:center;font-size:11px;color:#aaa;">
+        Powered by <a href="https://madeeas.com" style="color:#FD5811;text-decoration:none;font-weight:600;">MadeEA</a> · Executive Inbox Summary
+      </div>
+    </div>
+  </div>
+</body></html>`;
+
+    return {
+        subject: `Inbox Summary: ${totalCategorized} items across ${Object.values(categories).filter(a => a.length > 0).length} categories - ${today}`,
+        html,
+    };
+}
+
+function createRawEmail(to, subject, htmlBody) {
+    const boundary = 'boundary_' + Date.now();
+    const email = [
+        `To: ${to}`,
+        `Subject: ${subject}`,
+        'MIME-Version: 1.0',
+        `Content-Type: multipart/alternative; boundary="${boundary}"`,
+        '',
+        `--${boundary}`,
+        'Content-Type: text/html; charset=UTF-8',
+        '',
+        htmlBody,
+        `--${boundary}--`,
+    ].join('\r\n');
+
+    return Buffer.from(email).toString('base64url');
+}
