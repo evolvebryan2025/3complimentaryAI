@@ -1,6 +1,7 @@
 // Generate Priorities — On-demand Top 5 Priority Alignment
-// Pulls Calendar, Gmail, Google Tasks → AI generates daily priorities
+// Pulls Calendar, Gmail/Outlook, Google Tasks/Microsoft To Do → AI generates daily priorities
 const { google } = require('googleapis');
+const msGraph = require('./microsoft-graph');
 const { createClient } = require('@supabase/supabase-js');
 const jwt = require('jsonwebtoken');
 const cookie = require('cookie');
@@ -44,42 +45,73 @@ exports.handler = async (event) => {
             return { statusCode: 404, body: JSON.stringify({ error: 'User not found' }) };
         }
 
-        if (!user.google_access_token) {
-            return { statusCode: 400, body: JSON.stringify({ error: 'No Google connection found. Please reconnect.' }) };
+        // 2. Detect provider
+        const provider = user.connected_provider || (user.google_access_token ? 'google' : (user.microsoft_access_token ? 'microsoft' : null));
+
+        if (!provider) {
+            return { statusCode: 400, body: JSON.stringify({ error: 'No Google or Microsoft connection found. Please connect an account.' }) };
         }
 
-        // 2. Set up Google OAuth client
-        const oauth2Client = new google.auth.OAuth2(
-            process.env.GOOGLE_CLIENT_ID,
-            process.env.GOOGLE_CLIENT_SECRET
-        );
+        let calendarData, emailData, taskData;
+        let oauth2Client = null; // Used by Google path; stays null for Microsoft
 
-        oauth2Client.setCredentials({
-            access_token: user.google_access_token,
-            refresh_token: user.google_refresh_token,
-            expiry_date: user.google_token_expiry ? new Date(user.google_token_expiry).getTime() : null,
-        });
+        if (provider === 'microsoft') {
+            // ─── Microsoft Graph path ───
+            const msAccessToken = await msGraph.refreshMicrosoftToken(user);
 
-        // Refresh token if expired
-        try {
-            const { credentials } = await oauth2Client.refreshAccessToken();
-            oauth2Client.setCredentials(credentials);
-            if (credentials.access_token !== user.google_access_token) {
-                await supabase.from('users').update({
-                    google_access_token: credentials.access_token,
-                    google_token_expiry: credentials.expiry_date ? new Date(credentials.expiry_date).toISOString() : null,
-                }).eq('id', userId);
+            const now = new Date();
+            const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+            const endOfRange = new Date(startOfDay.getTime() + 3 * 24 * 60 * 60 * 1000);
+            const threeDaysAgo = new Date(Date.now() - 3 * 86400000).toISOString();
+
+            [calendarData, emailData, taskData] = await Promise.all([
+                msGraph.getCalendarEvents(msAccessToken, startOfDay.toISOString(), endOfRange.toISOString())
+                    .then(events => normalizeMicrosoftCalendarEvents(events))
+                    .catch(err => { console.log('MS Calendar fetch error:', err.message); return []; }),
+                msGraph.getImportantEmails(msAccessToken, threeDaysAgo, 30)
+                    .then(emails => normalizeMicrosoftEmails(emails))
+                    .catch(err => { console.log('MS Mail fetch error:', err.message); return []; }),
+                msGraph.getTodoTasks(msAccessToken)
+                    .then(tasks => normalizeMicrosoftTasks(tasks))
+                    .catch(err => { console.log('MS Tasks fetch error:', err.message); return []; }),
+            ]);
+        } else {
+            // ─── Google path (existing) ───
+            if (!user.google_access_token) {
+                return { statusCode: 400, body: JSON.stringify({ error: 'No Google connection found. Please reconnect.' }) };
             }
-        } catch (refreshErr) {
-            console.log('Token refresh note:', refreshErr.message);
-        }
 
-        // 3. Fetch data from all 3 sources in parallel
-        const [calendarData, emailData, taskData] = await Promise.all([
-            fetchCalendarEvents(oauth2Client, user.calendar_id || 'primary'),
-            fetchPriorityEmails(oauth2Client),
-            fetchGoogleTasks(oauth2Client),
-        ]);
+            oauth2Client = new google.auth.OAuth2(
+                process.env.GOOGLE_CLIENT_ID,
+                process.env.GOOGLE_CLIENT_SECRET
+            );
+
+            oauth2Client.setCredentials({
+                access_token: user.google_access_token,
+                refresh_token: user.google_refresh_token,
+                expiry_date: user.google_token_expiry ? new Date(user.google_token_expiry).getTime() : null,
+            });
+
+            // Refresh token if expired
+            try {
+                const { credentials } = await oauth2Client.refreshAccessToken();
+                oauth2Client.setCredentials(credentials);
+                if (credentials.access_token !== user.google_access_token) {
+                    await supabase.from('users').update({
+                        google_access_token: credentials.access_token,
+                        google_token_expiry: credentials.expiry_date ? new Date(credentials.expiry_date).toISOString() : null,
+                    }).eq('id', userId);
+                }
+            } catch (refreshErr) {
+                console.log('Token refresh note:', refreshErr.message);
+            }
+
+            [calendarData, emailData, taskData] = await Promise.all([
+                fetchCalendarEvents(oauth2Client, user.calendar_id || 'primary'),
+                fetchPriorityEmails(oauth2Client),
+                fetchGoogleTasks(oauth2Client),
+            ]);
+        }
 
         // 4. Process each data source
         const processedCalendar = processCalendarEvents(calendarData);
@@ -95,9 +127,15 @@ exports.handler = async (event) => {
 
         // 7. Format and email the report
         const report = formatPriorityReport(aiOutput, context, user);
-        const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
-        const rawEmail = createRawEmail(user.email, report.subject, report.html);
-        await gmail.users.messages.send({ userId: 'me', requestBody: { raw: rawEmail } });
+
+        if (provider === 'microsoft') {
+            const msAccessToken = await msGraph.refreshMicrosoftToken(user);
+            await msGraph.sendEmail(msAccessToken, user.email, report.subject, report.html);
+        } else {
+            const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+            const rawEmail = createRawEmail(user.email, report.subject, report.html);
+            await gmail.users.messages.send({ userId: 'me', requestBody: { raw: rawEmail } });
+        }
 
         // 8. Log success
         await supabase.from('briefing_logs').insert({
@@ -244,6 +282,75 @@ async function fetchGoogleTasks(auth) {
         console.log('Tasks fetch error:', err.message);
         return [];
     }
+}
+
+// ═══════════════════════════════════════════════
+//  Microsoft → Google format normalization
+//  These transform MS Graph responses so the
+//  existing process* functions work unchanged.
+// ═══════════════════════════════════════════════
+
+function normalizeMicrosoftCalendarEvents(msEvents) {
+    return msEvents.map(event => {
+        const isAllDay = !!event.isAllDay;
+        // Google uses start.date (date-only) for all-day events and start.dateTime for timed events.
+        // Mirror that convention so processCalendarEvents detects all-day correctly via !event.start?.dateTime.
+        const startObj = {};
+        const endObj = {};
+        if (isAllDay) {
+            startObj.date = event.start?.dateTime ? event.start.dateTime.split('T')[0] : '';
+            endObj.date = event.end?.dateTime ? event.end.dateTime.split('T')[0] : '';
+        } else {
+            startObj.dateTime = event.start?.dateTime || '';
+            endObj.dateTime = event.end?.dateTime || '';
+        }
+
+        return {
+            summary: event.subject || '',
+            start: startObj,
+            end: endObj,
+            attendees: (event.attendees || []).map(a => ({
+                email: a.emailAddress?.address || '',
+            })),
+            location: typeof event.location === 'object' ? (event.location?.displayName || '') : (event.location || ''),
+            description: event.bodyPreview || '',
+        };
+    });
+}
+
+function normalizeMicrosoftEmails(msEmails) {
+    return msEmails.map(email => {
+        const labelIds = [];
+        if (email.importance === 'high') labelIds.push('IMPORTANT');
+        if (email.flag?.flagStatus === 'flagged') labelIds.push('STARRED');
+        if (email.isRead === false) labelIds.push('UNREAD');
+
+        const fromAddress = email.from?.emailAddress?.address || '';
+        const fromName = email.from?.emailAddress?.name || '';
+        const fromFormatted = fromName ? `${fromName} <${fromAddress}>` : fromAddress;
+
+        return {
+            id: email.id || '',
+            threadId: email.conversationId || email.id || '',
+            subject: email.subject || 'No Subject',
+            from: fromFormatted,
+            date: email.receivedDateTime || '',
+            snippet: email.bodyPreview || '',
+            labelIds,
+        };
+    });
+}
+
+function normalizeMicrosoftTasks(msTasks) {
+    return msTasks.map(task => ({
+        title: task.title || '',
+        notes: task.body?.content || '',
+        due: task.dueDateTime?.dateTime || null,
+        status: task.status === 'completed' ? 'completed' : 'needsAction',
+        listName: task.listName || 'Tasks',
+        // Carry forward Microsoft importance as a hint (used by processTasks if needed)
+        _msImportance: task.importance || 'normal',
+    }));
 }
 
 // ═══════════════════════════════════════════════
@@ -420,7 +527,7 @@ function processTasks(tasks) {
             prioritySignal = 'high';
         } else if (title.includes('urgent') || title.includes('critical') || title.includes('asap')) {
             prioritySignal = 'critical';
-        } else if (title.includes('important') || title.includes('priority') || isDueThisWeek) {
+        } else if (title.includes('important') || title.includes('priority') || isDueThisWeek || task._msImportance === 'high') {
             prioritySignal = 'high';
         }
 

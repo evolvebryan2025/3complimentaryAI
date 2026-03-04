@@ -24,7 +24,7 @@ exports.handler = async (event) => {
         // Get user's Google token to revoke
         const { data: user } = await supabase
             .from('users')
-            .select('google_access_token')
+            .select('google_access_token, microsoft_access_token')
             .eq('id', decoded.userId)
             .single();
 

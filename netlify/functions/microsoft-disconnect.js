@@ -1,6 +1,5 @@
-// Disconnect Google — Revoke tokens without deleting account
+// Disconnect Microsoft — Clear tokens without deleting account
 const { createClient } = require('@supabase/supabase-js');
-const { google } = require('googleapis');
 const jwt = require('jsonwebtoken');
 const cookie = require('cookie');
 
@@ -21,30 +20,14 @@ exports.handler = async (event) => {
         const decoded = jwt.verify(token, jwtSecret);
         const supabase = createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_KEY);
 
-        // Get current tokens to revoke
-        const { data: user } = await supabase
-            .from('users')
-            .select('google_access_token')
-            .eq('id', decoded.userId)
-            .single();
-
-        // Revoke Google token
-        if (user?.google_access_token) {
-            try {
-                const oauth2Client = new google.auth.OAuth2();
-                await oauth2Client.revokeToken(user.google_access_token);
-            } catch (e) {
-                console.log('Token revocation note:', e.message);
-            }
-        }
-
-        // Clear Google fields from user record
+        // Clear Microsoft fields from user record
+        // Note: Microsoft doesn't have a token revocation endpoint like Google
         await supabase.from('users').update({
-            google_access_token: null,
-            google_refresh_token: null,
-            google_token_expiry: null,
-            avatar_url: null,
+            microsoft_access_token: null,
+            microsoft_refresh_token: null,
+            microsoft_token_expiry: null,
             connected_provider: null,
+            avatar_url: null,
             updated_at: new Date().toISOString(),
         }).eq('id', decoded.userId);
 
@@ -54,7 +37,7 @@ exports.handler = async (event) => {
             body: JSON.stringify({ success: true }),
         };
     } catch (err) {
-        console.error('Google disconnect error:', err);
-        return { statusCode: 500, body: JSON.stringify({ error: 'Failed to disconnect Google' }) };
+        console.error('Microsoft disconnect error:', err);
+        return { statusCode: 500, body: JSON.stringify({ error: 'Failed to disconnect Microsoft' }) };
     }
 };

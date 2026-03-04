@@ -30,7 +30,7 @@ exports.handler = async (event) => {
 
         const { data: user, error } = await supabase
             .from('users')
-            .select('id, email, name, avatar_url, calendar_id, send_time, timezone, is_active, theme_preference, strategic_goals, google_access_token, created_at')
+            .select('id, email, name, avatar_url, calendar_id, send_time, timezone, is_active, theme_preference, strategic_goals, google_access_token, microsoft_access_token, connected_provider, created_at')
             .eq('id', decoded.userId)
             .single();
 
@@ -43,14 +43,17 @@ exports.handler = async (event) => {
             };
         }
 
-        // Compute google_connected flag, strip raw token
+        // Compute connection flags, strip raw tokens
         const google_connected = !!user.google_access_token;
+        const microsoft_connected = !!user.microsoft_access_token;
+        const connected_provider = user.connected_provider || null;
         delete user.google_access_token;
+        delete user.microsoft_access_token;
 
         return {
             statusCode: 200,
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ user: { ...user, google_connected } }),
+            body: JSON.stringify({ user: { ...user, google_connected, microsoft_connected, connected_provider } }),
         };
     } catch (err) {
         console.error('auth-session error:', err.message);

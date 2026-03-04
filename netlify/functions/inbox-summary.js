@@ -5,6 +5,7 @@ const { createClient } = require('@supabase/supabase-js');
 const jwt = require('jsonwebtoken');
 const cookie = require('cookie');
 const OpenAI = require('openai');
+const msGraph = require('./microsoft-graph');
 
 // ─── Auth Helper ───
 function getUserIdFromCookie(event) {
@@ -44,107 +45,154 @@ exports.handler = async (event) => {
             return { statusCode: 404, body: JSON.stringify({ error: 'User not found' }) };
         }
 
-        if (!user.google_access_token) {
-            return { statusCode: 400, body: JSON.stringify({ error: 'No Google connection found. Please reconnect.' }) };
+        // 2. Detect provider
+        const provider = user.connected_provider || (user.google_access_token ? 'google' : (user.microsoft_access_token ? 'microsoft' : null));
+
+        if (!provider) {
+            return { statusCode: 400, body: JSON.stringify({ error: 'No email connection found. Please connect Google or Microsoft.' }) };
         }
-
-        // 2. Set up Google OAuth client
-        const oauth2Client = new google.auth.OAuth2(
-            process.env.GOOGLE_CLIENT_ID,
-            process.env.GOOGLE_CLIENT_SECRET
-        );
-
-        oauth2Client.setCredentials({
-            access_token: user.google_access_token,
-            refresh_token: user.google_refresh_token,
-            expiry_date: user.google_token_expiry ? new Date(user.google_token_expiry).getTime() : null,
-        });
-
-        // Refresh token if expired
-        try {
-            const { credentials } = await oauth2Client.refreshAccessToken();
-            oauth2Client.setCredentials(credentials);
-
-            if (credentials.access_token !== user.google_access_token) {
-                await supabase.from('users').update({
-                    google_access_token: credentials.access_token,
-                    google_token_expiry: credentials.expiry_date ? new Date(credentials.expiry_date).toISOString() : null,
-                }).eq('id', userId);
-            }
-        } catch (refreshErr) {
-            console.log('Token refresh note:', refreshErr.message);
-        }
-
-        // 3. Fetch emails from last 24 hours (IMPORTANT label or unread/starred)
-        const gmail = google.gmail({ version: 'v1', auth: oauth2Client });
 
         const after24h = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const afterDate = Math.floor(after24h.getTime() / 1000);
-
-        const messagesRes = await gmail.users.messages.list({
-            userId: 'me',
-            q: `(is:important OR is:starred OR is:unread) after:${afterDate}`,
-            maxResults: 30,
-        });
-
-        const messageIds = messagesRes.data.messages || [];
-
-        if (messageIds.length === 0) {
-            return {
-                statusCode: 200,
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    success: true,
-                    message: 'No important emails in the last 24 hours. Inbox Zero! 🎉',
-                    totalEmails: 0,
-                    categories: {
-                        highPriority: [],
-                        actionRequired: [],
-                        followUp: [],
-                        deadlines: [],
-                    },
-                }),
-            };
-        }
-
-        // 4. Fetch full email details (parallel, batched)
         const emails = [];
-        for (const msg of messageIds.slice(0, 30)) {
-            try {
-                const full = await gmail.users.messages.get({
-                    userId: 'me',
-                    id: msg.id,
-                    format: 'full',
-                });
+        let gmail; // Declared here so it's available for sending later (Google path)
 
-                const headers = {};
-                (full.data.payload?.headers || []).forEach((h) => {
-                    headers[h.name.toLowerCase()] = h.value;
-                });
+        if (provider === 'microsoft') {
+            // ─── Microsoft Graph path ───
+            const msAccessToken = await msGraph.refreshMicrosoftToken(user);
+            const afterDateISO = after24h.toISOString();
 
-                // Extract plain text body
+            const msEmails = await msGraph.getImportantEmails(msAccessToken, afterDateISO, 30);
+
+            for (const msg of msEmails) {
+                // Strip HTML tags from body.content to get plain text
                 let bodyText = '';
-                if (full.data.payload?.body?.data) {
-                    bodyText = Buffer.from(full.data.payload.body.data, 'base64').toString('utf-8');
-                } else if (full.data.payload?.parts) {
-                    const textPart = full.data.payload.parts.find(p => p.mimeType === 'text/plain');
-                    if (textPart?.body?.data) {
-                        bodyText = Buffer.from(textPart.body.data, 'base64').toString('utf-8');
-                    }
+                if (msg.body && msg.body.content) {
+                    bodyText = msg.body.content.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').trim();
                 }
+
+                const fromName = msg.from?.emailAddress?.name || '';
+                const fromAddress = msg.from?.emailAddress?.address || '';
+                const fromDisplay = fromName ? `${fromName} <${fromAddress}>` : fromAddress || 'Unknown';
 
                 emails.push({
                     id: msg.id,
-                    threadId: full.data.threadId,
-                    subject: headers['subject'] || 'No Subject',
-                    from: headers['from'] || 'Unknown',
-                    date: headers['date'] || '',
-                    snippet: full.data.snippet || '',
-                    text: bodyText.substring(0, 500), // First 500 chars for classification
-                    labels: full.data.labelIds || [],
+                    threadId: msg.id, // Microsoft doesn't have threadId like Gmail; use message id
+                    subject: msg.subject || 'No Subject',
+                    from: fromDisplay,
+                    date: msg.receivedDateTime || '',
+                    snippet: msg.bodyPreview || '',
+                    text: bodyText.substring(0, 500),
+                    labels: [
+                        ...(msg.importance === 'high' ? ['IMPORTANT'] : []),
+                        ...(msg.isRead === false ? ['UNREAD'] : []),
+                        ...(msg.flag?.flagStatus === 'flagged' ? ['STARRED'] : []),
+                    ],
+                    emailLink: msg.webLink || '',
+                    _provider: 'microsoft',
                 });
-            } catch (emailErr) {
-                console.log('Error fetching email:', emailErr.message);
+            }
+        } else {
+            // ─── Google Gmail path ───
+            if (!user.google_access_token) {
+                return { statusCode: 400, body: JSON.stringify({ error: 'No Google connection found. Please reconnect.' }) };
+            }
+
+            const oauth2Client = new google.auth.OAuth2(
+                process.env.GOOGLE_CLIENT_ID,
+                process.env.GOOGLE_CLIENT_SECRET
+            );
+
+            oauth2Client.setCredentials({
+                access_token: user.google_access_token,
+                refresh_token: user.google_refresh_token,
+                expiry_date: user.google_token_expiry ? new Date(user.google_token_expiry).getTime() : null,
+            });
+
+            // Refresh token if expired
+            try {
+                const { credentials } = await oauth2Client.refreshAccessToken();
+                oauth2Client.setCredentials(credentials);
+
+                if (credentials.access_token !== user.google_access_token) {
+                    await supabase.from('users').update({
+                        google_access_token: credentials.access_token,
+                        google_token_expiry: credentials.expiry_date ? new Date(credentials.expiry_date).toISOString() : null,
+                    }).eq('id', userId);
+                }
+            } catch (refreshErr) {
+                console.log('Token refresh note:', refreshErr.message);
+            }
+
+            // 3. Fetch emails from last 24 hours (IMPORTANT label or unread/starred)
+            gmail = google.gmail({ version: 'v1', auth: oauth2Client });
+
+            const afterDate = Math.floor(after24h.getTime() / 1000);
+
+            const messagesRes = await gmail.users.messages.list({
+                userId: 'me',
+                q: `(is:important OR is:starred OR is:unread) after:${afterDate}`,
+                maxResults: 30,
+            });
+
+            const messageIds = messagesRes.data.messages || [];
+
+            if (messageIds.length === 0) {
+                return {
+                    statusCode: 200,
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        success: true,
+                        message: 'No important emails in the last 24 hours. Inbox Zero! 🎉',
+                        totalEmails: 0,
+                        categories: {
+                            highPriority: [],
+                            actionRequired: [],
+                            followUp: [],
+                            deadlines: [],
+                        },
+                    }),
+                };
+            }
+
+            // 4. Fetch full email details (parallel, batched)
+            for (const msg of messageIds.slice(0, 30)) {
+                try {
+                    const full = await gmail.users.messages.get({
+                        userId: 'me',
+                        id: msg.id,
+                        format: 'full',
+                    });
+
+                    const headers = {};
+                    (full.data.payload?.headers || []).forEach((h) => {
+                        headers[h.name.toLowerCase()] = h.value;
+                    });
+
+                    // Extract plain text body
+                    let bodyText = '';
+                    if (full.data.payload?.body?.data) {
+                        bodyText = Buffer.from(full.data.payload.body.data, 'base64').toString('utf-8');
+                    } else if (full.data.payload?.parts) {
+                        const textPart = full.data.payload.parts.find(p => p.mimeType === 'text/plain');
+                        if (textPart?.body?.data) {
+                            bodyText = Buffer.from(textPart.body.data, 'base64').toString('utf-8');
+                        }
+                    }
+
+                    emails.push({
+                        id: msg.id,
+                        threadId: full.data.threadId,
+                        subject: headers['subject'] || 'No Subject',
+                        from: headers['from'] || 'Unknown',
+                        date: headers['date'] || '',
+                        snippet: full.data.snippet || '',
+                        text: bodyText.substring(0, 500), // First 500 chars for classification
+                        labels: full.data.labelIds || [],
+                        _provider: 'google',
+                    });
+                } catch (emailErr) {
+                    console.log('Error fetching email:', emailErr.message);
+                }
             }
         }
 
@@ -251,27 +299,42 @@ Classify ALL emails. Use 1-based indexing matching [Email N].`
                     dateFormatted = email.date;
                 }
 
-                categories[cat].push({
+                // Build the link based on provider
+                const emailEntry = {
                     id: email.id,
                     threadId: email.threadId,
                     subject: email.subject,
                     from: fromClean,
                     date: dateFormatted,
                     snippet: email.snippet.substring(0, 150),
-                    gmailLink: `https://mail.google.com/mail/u/0/#inbox/${email.id}`,
-                });
+                };
+
+                if (email._provider === 'microsoft') {
+                    emailEntry.emailLink = email.emailLink || '';
+                } else {
+                    emailEntry.gmailLink = `https://mail.google.com/mail/u/0/#inbox/${email.id}`;
+                    emailEntry.emailLink = emailEntry.gmailLink; // Also set emailLink for unified frontend access
+                }
+
+                categories[cat].push(emailEntry);
             }
         }
 
         const totalCategorized = Object.values(categories).reduce((sum, arr) => sum + arr.length, 0);
 
-        // 8. Compose and send email via Gmail
+        // 8. Compose and send summary email
         const emailHtml = composeInboxEmail(categories, totalCategorized, emails.length);
-        const rawEmail = createRawEmail(user.email, emailHtml.subject, emailHtml.html);
-        await gmail.users.messages.send({
-            userId: 'me',
-            requestBody: { raw: rawEmail },
-        });
+
+        if (provider === 'microsoft') {
+            const msAccessToken = await msGraph.refreshMicrosoftToken(user);
+            await msGraph.sendEmail(msAccessToken, user.email, emailHtml.subject, emailHtml.html);
+        } else {
+            const rawEmail = createRawEmail(user.email, emailHtml.subject, emailHtml.html);
+            await gmail.users.messages.send({
+                userId: 'me',
+                requestBody: { raw: rawEmail },
+            });
+        }
 
         return {
             statusCode: 200,
@@ -329,7 +392,7 @@ function composeInboxEmail(categories, totalCategorized, totalScanned) {
             <tr>
               <td style="padding:12px 16px;border-bottom:1px solid #eef0f5;">
                 <div style="font-size:14px;font-weight:600;color:#1a1a2e;margin-bottom:4px;">
-                  <a href="${item.gmailLink}" style="color:#1a1a2e;text-decoration:none;">${item.subject}</a>
+                  <a href="${item.emailLink || item.gmailLink}" style="color:#1a1a2e;text-decoration:none;">${item.subject}</a>
                 </div>
                 <div style="font-size:12px;color:#888;margin-bottom:4px;">${item.from} · ${item.date}</div>
                 <div style="font-size:13px;color:#555;line-height:1.4;">${item.snippet}</div>

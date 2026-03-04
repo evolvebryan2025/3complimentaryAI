@@ -199,11 +199,46 @@ async function handleDisconnectGoogle() {
 
         if (response.ok) {
             currentUser.google_connected = false;
+            currentUser.connected_provider = null;
             currentUser.avatar_url = null;
             updateUserUI();
             showToast('Google account disconnected.');
         } else {
             showToast('Failed to disconnect Google. Please try again.');
+        }
+    } catch (err) {
+        showToast('Network error. Please check your connection.');
+    }
+
+    showLoading(false);
+}
+
+// ─── Microsoft Connect / Disconnect ───
+function handleConnectMicrosoft() {
+    window.location.href = `${CONFIG.apiBase}/auth-microsoft`;
+}
+
+async function handleDisconnectMicrosoft() {
+    if (!confirm('Disconnect Microsoft? Features like Briefs, Priorities, and Inbox will be unavailable until you reconnect.')) {
+        return;
+    }
+
+    showLoading(true);
+
+    try {
+        const response = await fetch(`${CONFIG.apiBase}/microsoft-disconnect`, {
+            method: 'POST',
+            credentials: 'include',
+        });
+
+        if (response.ok) {
+            currentUser.microsoft_connected = false;
+            currentUser.connected_provider = null;
+            currentUser.avatar_url = null;
+            updateUserUI();
+            showToast('Microsoft account disconnected.');
+        } else {
+            showToast('Failed to disconnect Microsoft. Please try again.');
         }
     } catch (err) {
         showToast('Network error. Please check your connection.');
@@ -232,11 +267,15 @@ async function checkSession() {
         }
     }
 
-    // Handle Google connected redirect
+    // Handle Google/Microsoft connected redirect
     const params = new URLSearchParams(window.location.search);
     if (params.get('google') === 'connected') {
         window.history.replaceState({}, '', '/');
         showToast('Google account connected successfully!');
+    }
+    if (params.get('microsoft') === 'connected') {
+        window.history.replaceState({}, '', '/');
+        showToast('Microsoft account connected successfully!');
     }
 
     try {
@@ -275,6 +314,9 @@ function updateUserUI() {
     const name = currentUser.name || currentUser.email.split('@')[0];
     const avatar = currentUser.avatar_url || generateAvatarUrl(name);
     const googleConnected = !!currentUser.google_connected;
+    const microsoftConnected = !!currentUser.microsoft_connected;
+    const anyConnected = googleConnected || microsoftConnected;
+    const providerName = currentUser.connected_provider === 'microsoft' ? 'Microsoft' : 'Google';
 
     // Nav
     setElementText('user-name-nav', name.split(' ')[0]);
@@ -284,10 +326,10 @@ function updateUserUI() {
     setElementText('welcome-name', name.split(' ')[0]);
 
     // Status cards
-    setElementText('connection-status', googleConnected ? 'Google Connected' : 'Google Not Connected');
+    setElementText('connection-status', anyConnected ? `${providerName} Connected` : 'Not Connected');
     const statusCard = document.querySelector('.status-card-active');
     if (statusCard) {
-        statusCard.style.borderColor = googleConnected ? 'rgba(56, 239, 125, 0.3)' : 'rgba(255, 107, 107, 0.3)';
+        statusCard.style.borderColor = anyConnected ? 'rgba(56, 239, 125, 0.3)' : 'rgba(255, 107, 107, 0.3)';
     }
     setElementText('brief-time-display', formatTime(currentUser.send_time || '07:00'));
     setElementText('calendar-display', currentUser.calendar_id === 'primary' ? 'Primary' : currentUser.calendar_id);
@@ -296,7 +338,7 @@ function updateUserUI() {
     const gateIds = ['gate-brief', 'gate-priorities', 'gate-inbox'];
     gateIds.forEach(id => {
         const el = document.getElementById(id);
-        if (el) el.style.display = googleConnected ? 'none' : 'flex';
+        if (el) el.style.display = anyConnected ? 'none' : 'flex';
     });
 
     // Google account card in profile
@@ -304,6 +346,12 @@ function updateUserUI() {
     const connEl = document.getElementById('google-connected-info');
     if (notConnEl) notConnEl.style.display = googleConnected ? 'none' : 'block';
     if (connEl) connEl.style.display = googleConnected ? 'block' : 'none';
+
+    // Microsoft account card in profile
+    const msNotConnEl = document.getElementById('microsoft-not-connected');
+    const msConnEl = document.getElementById('microsoft-connected-info');
+    if (msNotConnEl) msNotConnEl.style.display = microsoftConnected ? 'none' : 'block';
+    if (msConnEl) msConnEl.style.display = microsoftConnected ? 'block' : 'none';
 
     // Profile form
     setElementValue('profile-name', currentUser.name || '');
@@ -419,7 +467,7 @@ async function handleDisconnect() {
             currentUser = null;
             localStorage.removeItem('meetprep-session');
             showPage('landing-page');
-            showToast('✅ Account deleted and Google disconnected.');
+            showToast('✅ Account deleted successfully.');
         } else {
             showToast('❌ Failed to disconnect. Please try again.');
         }
@@ -813,7 +861,7 @@ function renderInboxSummary(categories, summary, generatedAt) {
                 </div>
                 <div class="inbox-email-list">
                     ${emails.map(email => `
-                        <a href="${email.gmailLink}" target="_blank" rel="noopener noreferrer" class="inbox-email-item">
+                        <a href="${email.emailLink || email.gmailLink}" target="_blank" rel="noopener noreferrer" class="inbox-email-item">
                             <div class="inbox-email-top">
                                 <span class="inbox-email-from">${escapeHtml(email.from)}</span>
                                 <span class="inbox-email-date">${email.date}</span>

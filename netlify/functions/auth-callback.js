@@ -52,6 +52,11 @@ exports.handler = async (event) => {
             avatar_url: profile.picture || null,
             google_access_token: tokens.access_token,
             google_token_expiry: tokens.expiry_date ? new Date(tokens.expiry_date).toISOString() : null,
+            connected_provider: 'google',
+            // Clear Microsoft fields (one-at-a-time enforcement)
+            microsoft_access_token: null,
+            microsoft_refresh_token: null,
+            microsoft_token_expiry: null,
             updated_at: new Date().toISOString(),
         };
 
